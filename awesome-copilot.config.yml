@@ -1,0 +1,34 @@
+# Awesome Copilot Configuration File
+# Generated on 2025-09-24T23:34:11.540Z
+#
+# This file uses effective state precedence:
+# 1. Explicit item settings (true/false) override everything
+# 2. Items not listed inherit from enabled collections
+# 3. Otherwise items are disabled
+#
+# To use:
+# - Enable collections for curated sets of related items
+# - Explicitly set individual items to true/false to override collections
+# - Items not mentioned will follow collection settings
+#
+# After configuring, run: awesome-copilot apply
+#
+
+version: "1.0"
+project:
+  name: "FleetForge"
+  description: "FleetForge project with awesome-copilot enhancements for project management, databases, and containerization"
+  output_directory: ".github"
+prompts:
+instructions:
+chatmodes:
+collections:
+  azure-cloud-development: false
+  csharp-dotnet-development: false
+  database-data-management: true
+  devops-oncall: true
+  frontend-web-dev: false
+  project-planning: true
+  security-best-practices: false
+  technical-spike: false
+  testing-automation: false
