@@ -1,0 +1,26 @@
+# awesome-copilot configuration (tracked to share team config)
+# Uncomment the line below if you want to keep config private:
+# awesome-copilot.config.yml
+
+# Common Node.js ignores (if needed for future development)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE files
+*.swp
+*.swo
+
+# Temporary files
+*.tmp
+*.temp
