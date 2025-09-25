@@ -299,10 +299,26 @@ func (c *Cell) GetState() CellState {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	// Create a deep copy of the state
-	stateCopy := *c.state
-	stateCopy.Players = make(map[PlayerID]*PlayerState)
+	// Create a deep copy of the state without the mutex
+	stateCopy := CellState{
+		ID:          c.state.ID,
+		Boundaries:  c.state.Boundaries,
+		CreatedAt:   c.state.CreatedAt,
+		UpdatedAt:   c.state.UpdatedAt,
+		Capacity:    c.state.Capacity,
+		Players:     make(map[PlayerID]*PlayerState),
+		PlayerCount: c.state.PlayerCount,
+		Neighbors:   make([]CellID, len(c.state.Neighbors)),
+		Tick:        c.state.Tick,
+		GameState:   c.state.GameState,
+		Phase:       c.state.Phase,
+		Ready:       c.state.Ready,
+	}
 
+	// Copy neighbors slice
+	copy(stateCopy.Neighbors, c.state.Neighbors)
+
+	// Copy players map
 	for id, player := range c.state.Players {
 		playerCopy := *player
 		stateCopy.Players[id] = &playerCopy

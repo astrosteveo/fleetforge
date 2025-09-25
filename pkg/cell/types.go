@@ -1,7 +1,6 @@
 package cell
 
 import (
-	"sync"
 	"time"
 
 	"github.com/astrosteveo/fleetforge/api/v1"
@@ -62,8 +61,8 @@ type CellState struct {
 	Phase string `json:"phase"`
 	Ready bool   `json:"ready"`
 
-	// Thread safety
-	mutex sync.RWMutex `json:"-"`
+	// Thread safety - this field should not be copied
+	// The mutex is handled at the Cell level, not the state level
 }
 
 // HealthStatus represents the health status of a cell
