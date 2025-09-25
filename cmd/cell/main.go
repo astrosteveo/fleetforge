@@ -301,7 +301,7 @@ fleetforge_utilization_rate %.2f
 # TYPE fleetforge_cell_load gauge
 `,
 			stats["total_cells"],
-			stats["total_cells"], // cells_active same as total_cells for now
+			stats["active_cells"], // Use proper active_cells metric
 			stats["running_cells"],
 			stats["total_players"],
 			stats["total_capacity"],
@@ -310,8 +310,7 @@ fleetforge_utilization_rate %.2f
 
 		// Add per-cell load metrics
 		for cellID, cellStats := range perCellStats {
-			metrics += fmt.Sprintf(`fleetforge_cell_load{cell_id="%s"} %.2f
-`, cellID, cellStats["load"])
+			metrics += fmt.Sprintf("fleetforge_cell_load{cell_id=\"%s\"} %.2f\n", cellID, cellStats["load"])
 		}
 
 		w.Header().Set("Content-Type", "text/plain")

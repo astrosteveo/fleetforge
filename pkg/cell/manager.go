@@ -318,6 +318,7 @@ func (m *DefaultCellManager) GetCellStats() map[string]interface{} {
 	totalPlayers := 0
 	totalCapacity := 0
 	runningCells := 0
+	activeCells := 0
 
 	for _, cell := range m.cells {
 		state := cell.GetState()
@@ -326,6 +327,11 @@ func (m *DefaultCellManager) GetCellStats() map[string]interface{} {
 
 		if state.Phase == "Running" {
 			runningCells++
+		}
+
+		// A cell is active if it's ready and not in a terminated state
+		if state.Ready || state.Phase == "Running" || state.Phase == "Starting" {
+			activeCells++
 		}
 	}
 
@@ -336,6 +342,7 @@ func (m *DefaultCellManager) GetCellStats() map[string]interface{} {
 
 	return map[string]interface{}{
 		"total_cells":      len(m.cells),
+		"active_cells":     activeCells,
 		"running_cells":    runningCells,
 		"total_players":    totalPlayers,
 		"total_capacity":   totalCapacity,

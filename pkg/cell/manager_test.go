@@ -345,7 +345,7 @@ func TestCellManager_GetCellStats(t *testing.T) {
 
 	stats := defaultManager.GetCellStats()
 
-	expectedStats := []string{"total_cells", "running_cells", "total_players", "total_capacity", "utilization_rate"}
+	expectedStats := []string{"total_cells", "active_cells", "running_cells", "total_players", "total_capacity", "utilization_rate"}
 	for _, stat := range expectedStats {
 		if _, exists := stats[stat]; !exists {
 			t.Errorf("Expected stat %s not found", stat)
@@ -358,6 +358,11 @@ func TestCellManager_GetCellStats(t *testing.T) {
 
 	if stats["total_capacity"].(int) != 50 {
 		t.Errorf("Expected total_capacity 50, got %v", stats["total_capacity"])
+	}
+
+	// Test that active_cells is properly counted
+	if stats["active_cells"].(int) != 1 {
+		t.Errorf("Expected active_cells 1, got %v", stats["active_cells"])
 	}
 }
 
