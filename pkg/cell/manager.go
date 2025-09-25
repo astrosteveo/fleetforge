@@ -318,6 +318,7 @@ func (m *DefaultCellManager) GetCellStats() map[string]interface{} {
 	totalPlayers := 0
 	totalCapacity := 0
 	runningCells := 0
+	activeCells := 0
 
 	for _, cell := range m.cells {
 		state := cell.GetState()
@@ -326,6 +327,11 @@ func (m *DefaultCellManager) GetCellStats() map[string]interface{} {
 
 		if state.Phase == "Running" {
 			runningCells++
+		}
+
+		// A cell is active if it's ready and not in a terminated state
+		if state.Ready || state.Phase == "Running" || state.Phase == "Starting" {
+			activeCells++
 		}
 	}
 
@@ -336,9 +342,36 @@ func (m *DefaultCellManager) GetCellStats() map[string]interface{} {
 
 	return map[string]interface{}{
 		"total_cells":      len(m.cells),
+		"active_cells":     activeCells,
 		"running_cells":    runningCells,
 		"total_players":    totalPlayers,
 		"total_capacity":   totalCapacity,
 		"utilization_rate": utilizationRate,
 	}
+}
+
+// GetPerCellStats returns per-cell load statistics for metrics
+func (m *DefaultCellManager) GetPerCellStats() map[CellID]map[string]float64 {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	stats := make(map[CellID]map[string]float64)
+
+	for cellID, cell := range m.cells {
+		state := cell.GetState()
+
+		// Calculate load as player_count / max_players
+		load := 0.0
+		if state.Capacity.MaxPlayers > 0 {
+			load = float64(state.PlayerCount) / float64(state.Capacity.MaxPlayers)
+		}
+
+		stats[cellID] = map[string]float64{
+			"load":         load,
+			"player_count": float64(state.PlayerCount),
+			"max_players":  float64(state.Capacity.MaxPlayers),
+		}
+	}
+
+	return stats
 }

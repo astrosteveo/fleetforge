@@ -24,8 +24,8 @@ func TestWorldSpec_DefaultValues(t *testing.T) {
 	}
 
 	// Verify the object was created correctly
-	if ws.Name != "test-world" {
-		t.Errorf("Expected name 'test-world', got %s", ws.Name)
+	if ws.ObjectMeta.Name != "test-world" {
+		t.Errorf("Expected name 'test-world', got %s", ws.ObjectMeta.Name)
 	}
 
 	if ws.Spec.Topology.InitialCells != 4 {
