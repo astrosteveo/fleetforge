@@ -361,11 +361,21 @@ func getStringValue(ptr *string, defaultValue string) string {
 	return *ptr
 }
 
-func parseResourceQuantity(s string) resource.Quantity {
+// parseResourceQuantity parses a resource quantity string, logs errors, and uses contextually appropriate defaults.
+func (r *WorldSpecReconciler) parseResourceQuantity(s string, resourceType string) resource.Quantity {
 	qty, err := resource.ParseQuantity(s)
 	if err != nil {
-		// Return default quantity on parse error
-		return resource.MustParse("100m")
+		var defaultVal string
+		switch resourceType {
+		case "cpu":
+			defaultVal = "100m"
+		case "memory":
+			defaultVal = "128Mi"
+		default:
+			defaultVal = "100m"
+		}
+		r.Log.Error(err, "Failed to parse resource quantity", "value", s, "resourceType", resourceType, "usingDefault", defaultVal)
+		return resource.MustParse(defaultVal)
 	}
 	return qty
 }
