@@ -1,0 +1,334 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+  name: worldspecs.fleetforge.io
+spec:
+  group: fleetforge.io
+  names:
+    kind: WorldSpec
+    listKind: WorldSpecList
+    plural: worldspecs
+    shortNames:
+    - ws
+    singular: worldspec
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.cells[*].length
+      name: Cells
+      type: integer
+    - jsonPath: .status.totalPlayerCount
+      name: Players
+      type: integer
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: WorldSpec is the Schema for the worldspecs API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: WorldSpecSpec defines the desired state of WorldSpec
+            properties:
+              capacity:
+                description: Capacity defines resource capacity constraints
+                properties:
+                  cpuLimitPerCell:
+                    default: 1000m
+                    description: CPULimitPerCell defines the CPU limit for each cell
+                      pod
+                    type: string
+                  maxPlayersPerCell:
+                    default: 100
+                    description: MaxPlayersPerCell defines the maximum number of players
+                      per cell
+                    minimum: 1
+                    type: integer
+                  memoryLimitPerCell:
+                    default: 2Gi
+                    description: MemoryLimitPerCell defines the memory limit for each
+                      cell pod
+                    type: string
+                  storagePerCell:
+                    default: 10Gi
+                    description: StoragePerCell defines the storage allocation for
+                      each cell
+                    type: string
+                type: object
+              gameConfig:
+                description: GameConfig holds game-specific configuration
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+              persistence:
+                description: Persistence defines data persistence configuration
+                properties:
+                  backupRetention:
+                    default: 7
+                    description: BackupRetention defines how many backup snapshots
+                      to retain
+                    minimum: 1
+                    type: integer
+                  checkpointInterval:
+                    default: 30
+                    description: CheckpointInterval defines how often to checkpoint
+                      cell state (in seconds)
+                    minimum: 1
+                    type: integer
+                  enabled:
+                    default: true
+                    description: Enabled determines if persistence is enabled
+                    type: boolean
+                  storageClass:
+                    description: StorageClass defines the storage class for persistent
+                      volumes
+                    type: string
+                type: object
+              scaling:
+                description: Scaling defines scaling behavior
+                properties:
+                  maxCells:
+                    default: 100
+                    description: MaxCells defines the maximum number of cells allowed
+                    minimum: 1
+                    type: integer
+                  minCells:
+                    default: 1
+                    description: MinCells defines the minimum number of cells to maintain
+                    minimum: 1
+                    type: integer
+                  scaleDownThreshold:
+                    default: 0.3
+                    description: ScaleDownThreshold defines the threshold for scaling
+                      down (0.0-1.0)
+                    maximum: 0.9
+                    minimum: 0
+                    type: number
+                  scaleUpThreshold:
+                    default: 0.8
+                    description: ScaleUpThreshold defines the threshold for scaling
+                      up (0.0-1.0)
+                    maximum: 1
+                    minimum: 0.1
+                    type: number
+                type: object
+              topology:
+                description: Topology defines the world topology configuration
+                properties:
+                  cellSize:
+                    default: 1000
+                    description: CellSize defines the size of each cell in world units
+                    type: number
+                  initialCells:
+                    default: 4
+                    description: InitialCells defines the number of cells to create
+                      initially
+                    minimum: 1
+                    type: integer
+                  maxCellsPerCluster:
+                    default: 10
+                    description: MaxCellsPerCluster defines the maximum number of
+                      cells per cluster
+                    minimum: 1
+                    type: integer
+                  worldBoundaries:
+                    description: WorldBoundaries defines the spatial boundaries of
+                      the world
+                    properties:
+                      xMax:
+                        description: XMax defines the maximum X coordinate
+                        type: number
+                      xMin:
+                        description: XMin defines the minimum X coordinate
+                        type: number
+                      yMax:
+                        description: YMax defines the maximum Y coordinate
+                        type: number
+                      yMin:
+                        description: YMin defines the minimum Y coordinate
+                        type: number
+                    required:
+                    - xMax
+                    - xMin
+                    - yMax
+                    - yMin
+                    type: object
+                required:
+                - initialCells
+                - worldBoundaries
+                type: object
+            required:
+            - topology
+            type: object
+          status:
+            description: WorldSpecStatus defines the observed state of WorldSpec
+            properties:
+              cells:
+                description: Cells contains the status of all cells in the world
+                items:
+                  description: CellStatus represents the status of a single cell
+                  properties:
+                    boundaries:
+                      description: Boundaries defines the spatial boundaries of this
+                        cell
+                      properties:
+                        xMax:
+                          description: XMax defines the maximum X coordinate
+                          type: number
+                        xMin:
+                          description: XMin defines the minimum X coordinate
+                          type: number
+                        yMax:
+                          description: YMax defines the maximum Y coordinate
+                          type: number
+                        yMin:
+                          description: YMin defines the minimum Y coordinate
+                          type: number
+                      required:
+                      - xMax
+                      - xMin
+                      - yMax
+                      - yMin
+                      type: object
+                    clusterName:
+                      description: ClusterName is the name of the cluster hosting
+                        this cell
+                      type: string
+                    cpuUsage:
+                      description: CPUUsage is the current CPU usage percentage
+                      type: number
+                    id:
+                      description: ID is the unique identifier for the cell
+                      type: string
+                    lastCheckpoint:
+                      description: LastCheckpoint is the timestamp of the last checkpoint
+                      format: date-time
+                      type: string
+                    memoryUsage:
+                      description: MemoryUsage is the current memory usage percentage
+                      type: number
+                    phase:
+                      description: Phase represents the current phase of the cell
+                      type: string
+                    playerCount:
+                      description: PlayerCount is the current number of players in
+                        the cell
+                      type: integer
+                    ready:
+                      description: Ready indicates if the cell is ready to accept
+                        players
+                      type: boolean
+                  required:
+                  - boundaries
+                  - clusterName
+                  - cpuUsage
+                  - id
+                  - memoryUsage
+                  - phase
+                  - playerCount
+                  - ready
+                  type: object
+                type: array
+              conditions:
+                description: Conditions represents the latest available observations
+                  of the world's current state
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              lastUpdated:
+                description: LastUpdated is the timestamp of the last status update
+                format: date-time
+                type: string
+              observedGeneration:
+                description: ObservedGeneration is the most recent generation observed
+                  by the controller
+                format: int64
+                type: integer
+              phase:
+                description: Phase represents the current phase of the world
+                type: string
+              totalPlayerCount:
+                description: TotalPlayerCount is the total number of players across
+                  all cells
+                type: integer
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

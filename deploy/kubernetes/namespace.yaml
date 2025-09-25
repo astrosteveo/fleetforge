@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fleetforge-system
+  labels:
+    name: fleetforge-system
+    app.kubernetes.io/name: fleetforge
+    app.kubernetes.io/part-of: fleetforge

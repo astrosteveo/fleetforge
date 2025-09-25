@@ -1,0 +1,55 @@
+run:
+  timeout: 5m
+  issues-exit-code: 1
+  tests: true
+
+linters-settings:
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment
+  gocyclo:
+    min-complexity: 15
+  misspell:
+    locale: US
+  unused:
+    go: "1.21"
+  goconst:
+    min-len: 2
+    min-occurrences: 3
+
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - typecheck
+    - unused
+    - gocyclo
+    - gofmt
+    - goimports
+    - misspell
+    - goconst
+    - unconvert
+    - unparam
+  disable:
+    - structcheck # deprecated in favor of unused
+    - deadcode # deprecated in favor of unused
+    - varcheck # deprecated in favor of unused
+
+issues:
+  exclude-rules:
+    # Disable some linters for test files
+    - path: _test\.go
+      linters:
+        - gocyclo
+        - gosec
+        - dupl
+    # Disable typecheck errors for embedded interface methods
+    - linters:
+        - typecheck
+      text: "has no field or method (Get|List|Status)"
+  max-issues-per-linter: 0
+  max-same-issues: 0
