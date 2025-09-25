@@ -48,3 +48,6 @@ Thumbs.db
 
 # Docker and Kubernetes
 *.log
+
+# Test coverage
+cover.out

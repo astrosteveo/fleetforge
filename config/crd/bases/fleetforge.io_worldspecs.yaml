@@ -1,0 +1,360 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.13.0
+  name: worldspecs.fleetforge.io
+spec:
+  group: fleetforge.io
+  names:
+    kind: WorldSpec
+    listKind: WorldSpecList
+    plural: worldspecs
+    singular: worldspec
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.activeCells
+      name: Active Cells
+      type: integer
+    - jsonPath: .status.totalPlayers
+      name: Total Players
+      type: integer
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: WorldSpec is the Schema for the worldspecs API
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object.'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents.'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: WorldSpecSpec defines the desired state of WorldSpec
+            properties:
+              capacity:
+                description: CellCapacity defines resource and player limits for cells
+                properties:
+                  cpuLimitPerCell:
+                    description: CPULimitPerCell is the CPU limit for each cell pod
+                    type: string
+                  cpuRequestPerCell:
+                    description: CPURequestPerCell is the CPU request for each cell pod
+                    type: string
+                  maxPlayersPerCell:
+                    description: MaxPlayersPerCell is the maximum number of concurrent
+                      players per cell
+                    format: int32
+                    type: integer
+                  memoryLimitPerCell:
+                    description: MemoryLimitPerCell is the memory limit for each cell pod
+                    type: string
+                  memoryRequestPerCell:
+                    description: MemoryRequestPerCell is the memory request for each
+                      cell pod
+                    type: string
+                required:
+                - cpuLimitPerCell
+                - maxPlayersPerCell
+                - memoryLimitPerCell
+                type: object
+              gameServerImage:
+                description: GameServerImage is the container image for cell game servers
+                type: string
+              multiClusterEnabled:
+                description: MultiClusterEnabled enables cross-cluster cell placement
+                type: boolean
+              persistence:
+                description: PersistenceConfiguration defines data persistence behavior
+                properties:
+                  checkpointInterval:
+                    description: CheckpointInterval defines how often cell state is
+                      checkpointed
+                    type: string
+                  enabled:
+                    description: Enabled controls whether persistence is active
+                    type: boolean
+                  retentionPeriod:
+                    description: RetentionPeriod defines how long to retain checkpoint
+                      data
+                    type: string
+                  storageClass:
+                    description: StorageClass for persistent volume claims
+                    type: string
+                required:
+                - checkpointInterval
+                - enabled
+                - retentionPeriod
+                type: object
+              scaling:
+                description: ScalingConfiguration defines autoscaling behavior
+                properties:
+                  maxCells:
+                    description: MaxCells is the maximum number of cells allowed
+                    format: int32
+                    type: integer
+                  minCells:
+                    description: MinCells is the minimum number of cells to maintain
+                    format: int32
+                    type: integer
+                  predictiveEnabled:
+                    description: PredictiveEnabled enables predictive scaling based
+                      on player behavior
+                    type: boolean
+                  scaleDownThreshold:
+                    description: ScaleDownThreshold is the player density threshold
+                      that triggers scale-down
+                    type: number
+                  scaleUpThreshold:
+                    description: ScaleUpThreshold is the player density threshold that
+                      triggers scale-up
+                    type: number
+                required:
+                - predictiveEnabled
+                - scaleDownThreshold
+                - scaleUpThreshold
+                type: object
+              topology:
+                description: WorldTopology defines the spatial layout and initial cell
+                  configuration
+                properties:
+                  cellSize:
+                    description: CellSize defines the preferred size of individual cells
+                    properties:
+                      xMax:
+                        description: XMax is the maximum X coordinate
+                        type: number
+                      xMin:
+                        description: XMin is the minimum X coordinate
+                        type: number
+                      yMax:
+                        description: YMax is the maximum Y coordinate (optional for 2D
+                          worlds)
+                        type: number
+                      yMin:
+                        description: YMin is the minimum Y coordinate (optional for 2D
+                          worlds)
+                        type: number
+                      zMax:
+                        description: ZMax is the maximum Z coordinate (optional for 3D
+                          worlds)
+                        type: number
+                      zMin:
+                        description: ZMin is the minimum Z coordinate (optional for 3D
+                          worlds)
+                        type: number
+                    required:
+                    - xMax
+                    - xMin
+                    type: object
+                  initialCells:
+                    description: InitialCells is the number of cells to create at startup
+                    format: int32
+                    type: integer
+                  maxCellsPerCluster:
+                    description: MaxCellsPerCluster limits the number of cells per Kubernetes
+                      cluster
+                    format: int32
+                    type: integer
+                  worldBoundaries:
+                    description: WorldBoundaries defines the overall spatial boundaries
+                      of the world
+                    properties:
+                      xMax:
+                        description: XMax is the maximum X coordinate
+                        type: number
+                      xMin:
+                        description: XMin is the minimum X coordinate
+                        type: number
+                      yMax:
+                        description: YMax is the maximum Y coordinate (optional for 2D
+                          worlds)
+                        type: number
+                      yMin:
+                        description: YMin is the minimum Y coordinate (optional for 2D
+                          worlds)
+                        type: number
+                      zMax:
+                        description: ZMax is the maximum Z coordinate (optional for 3D
+                          worlds)
+                        type: number
+                      zMin:
+                        description: ZMin is the minimum Z coordinate (optional for 3D
+                          worlds)
+                        type: number
+                    required:
+                    - xMax
+                    - xMin
+                    type: object
+                required:
+                - initialCells
+                - worldBoundaries
+                type: object
+            required:
+            - capacity
+            - gameServerImage
+            - persistence
+            - scaling
+            - topology
+            type: object
+          status:
+            description: WorldSpecStatus defines the observed state of WorldSpec
+            properties:
+              activeCells:
+                description: ActiveCells is the current number of active cells
+                format: int32
+                type: integer
+              cells:
+                description: Cells contains status information for each cell
+                items:
+                  description: CellStatus represents the status of a single cell
+                  properties:
+                    boundaries:
+                      description: Boundaries defines the spatial boundaries of this
+                        cell
+                      properties:
+                        xMax:
+                          description: XMax is the maximum X coordinate
+                          type: number
+                        xMin:
+                          description: XMin is the minimum X coordinate
+                          type: number
+                        yMax:
+                          description: YMax is the maximum Y coordinate (optional for
+                            2D worlds)
+                          type: number
+                        yMin:
+                          description: YMin is the minimum Y coordinate (optional for
+                            2D worlds)
+                          type: number
+                        zMax:
+                          description: ZMax is the maximum Z coordinate (optional for
+                            3D worlds)
+                          type: number
+                        zMin:
+                          description: ZMin is the minimum Z coordinate (optional for
+                            3D worlds)
+                          type: number
+                      required:
+                      - xMax
+                      - xMin
+                      type: object
+                    clusterName:
+                      description: ClusterName is the name of the cluster where this
+                        cell is running
+                      type: string
+                    currentPlayers:
+                      description: CurrentPlayers is the current number of players in
+                        this cell
+                      format: int32
+                      type: integer
+                    health:
+                      description: Health indicates the health status of this cell
+                      type: string
+                    id:
+                      description: ID is the unique identifier for this cell
+                      type: string
+                    lastHeartbeat:
+                      description: LastHeartbeat is the timestamp of the last health
+                        check
+                      format: date-time
+                      type: string
+                    podName:
+                      description: PodName is the name of the Kubernetes pod running
+                        this cell
+                      type: string
+                  required:
+                  - boundaries
+                  - currentPlayers
+                  - health
+                  - id
+                  - podName
+                  type: object
+                type: array
+              conditions:
+                description: Conditions represent the latest available observations
+                  of the world's state
+                items:
+                  description: "Condition contains details for one aspect of the current
+                    state of this API Resource."
+                  properties:
+                    lastTransitionTime:
+                      description: lastTransitionTime is the last time the condition
+                        transitioned from one status to another.
+                      format: date-time
+                      type: string
+                    message:
+                      description: message is a human readable message indicating
+                        details about the transition.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: observedGeneration represents the .metadata.generation
+                        that the condition was set based upon.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: reason contains a programmatic identifier indicating
+                        the reason for the condition's last transition.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              lastUpdateTime:
+                description: LastUpdateTime is the last time the status was updated
+                format: date-time
+                type: string
+              message:
+                description: Message provides additional information about the current
+                  state
+                type: string
+              phase:
+                description: Phase represents the current phase of the world deployment
+                type: string
+              totalPlayers:
+                description: TotalPlayers is the current total number of players across
+                  all cells
+                format: int32
+                type: integer
+            required:
+            - activeCells
+            - totalPlayers
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
