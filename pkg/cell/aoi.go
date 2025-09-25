@@ -42,7 +42,7 @@ func (f *BasicAOIFilter) ShouldSync(pos1, pos2 WorldPosition, syncRadius float64
 	if syncRadius == 0 {
 		syncRadius = f.syncRadius
 	}
-	
+
 	distance := f.calculateDistance(pos1, pos2)
 	return distance <= syncRadius
 }
@@ -86,19 +86,19 @@ func NewAdvancedAOIFilter() AOIFilter {
 type AOIConfiguration struct {
 	// Default radius for player visibility
 	DefaultRadius float64 `json:"defaultRadius"`
-	
+
 	// Radius for synchronization between cells
 	SyncRadius float64 `json:"syncRadius"`
-	
+
 	// Maximum number of players to track in AOI
 	MaxPlayers int `json:"maxPlayers"`
-	
+
 	// Update frequency for AOI calculations (in ticks)
 	UpdateFrequency int `json:"updateFrequency"`
-	
+
 	// Enable distance-based level of detail
 	EnableLOD bool `json:"enableLOD"`
-	
+
 	// LOD distance thresholds
 	LODThresholds []float64 `json:"lodThresholds"`
 }
@@ -125,10 +125,10 @@ type InterestZone struct {
 
 // AOIManager manages Area of Interest calculations for a cell
 type AOIManager struct {
-	config       AOIConfiguration
-	zones        map[PlayerID]*InterestZone
-	updateTick   int64
-	filter       AOIFilter
+	config     AOIConfiguration
+	zones      map[PlayerID]*InterestZone
+	updateTick int64
+	filter     AOIFilter
 }
 
 // NewAOIManager creates a new AOI manager
@@ -152,7 +152,7 @@ func (m *AOIManager) UpdatePlayerZone(playerID PlayerID, position WorldPosition)
 		}
 		m.zones[playerID] = zone
 	}
-	
+
 	zone.Center = position
 }
 
@@ -167,19 +167,19 @@ func (m *AOIManager) GetPlayersInZone(playerID PlayerID, allPlayers map[PlayerID
 	if !exists {
 		return nil
 	}
-	
+
 	var playersInZone []*PlayerState
-	
+
 	for id, player := range allPlayers {
 		if id == playerID {
 			continue // Don't include the player themselves
 		}
-		
+
 		if m.filter.ShouldSync(zone.Center, player.Position, zone.Radius) {
 			playersInZone = append(playersInZone, player)
 		}
 	}
-	
+
 	return playersInZone
 }
 
@@ -188,7 +188,7 @@ func (m *AOIManager) ShouldUpdate(currentTick int64) bool {
 	if m.config.UpdateFrequency <= 0 {
 		return true // Update every tick
 	}
-	
+
 	return currentTick%int64(m.config.UpdateFrequency) == 0
 }
 
@@ -197,12 +197,12 @@ func (m *AOIManager) GetLODLevel(distance float64) int {
 	if !m.config.EnableLOD {
 		return 0 // Highest detail
 	}
-	
+
 	for i, threshold := range m.config.LODThresholds {
 		if distance <= threshold {
 			return i
 		}
 	}
-	
+
 	return len(m.config.LODThresholds) // Lowest detail
 }
