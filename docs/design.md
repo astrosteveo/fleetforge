@@ -32,7 +32,7 @@ FleetForge implements a cell-mesh elastic fabric that enables massively multipla
 ### 3.1 High-Level Architecture Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────────┐
+┌────────────────────────────────────────────────────────────────────────────────┐
 │                              Global Control Plane                               │
 ├─────────────────┬─────────────────┬─────────────────┬─────────────────────────┤
 │  WorldSpec      │   Predictive    │   Placement     │    Migration            │
