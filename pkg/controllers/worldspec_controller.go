@@ -18,7 +18,7 @@ package controllers
 
 import (
 	"context"
-	"fmt" 
+	"fmt"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -103,15 +103,15 @@ func (r *WorldSpecReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 func (r *WorldSpecReconciler) reconcileCells(ctx context.Context, worldSpec *fleetforgev1.WorldSpec, log logr.Logger) (ctrl.Result, error) {
 	// Calculate cell boundaries based on world topology
 	cells := calculateCellBoundaries(worldSpec.Spec.Topology)
-	
+
 	for i, cellBounds := range cells {
 		cellID := fmt.Sprintf("%s-cell-%d", worldSpec.Name, i)
-		
+
 		// Create or update deployment for this cell
 		if err := r.reconcileCellDeployment(ctx, worldSpec, cellID, cellBounds, log); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile cell deployment %s: %w", cellID, err)
 		}
-		
+
 		// Create or update service for this cell
 		if err := r.reconcileCellService(ctx, worldSpec, cellID, log); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile cell service %s: %w", cellID, err)
@@ -141,17 +141,17 @@ func (r *WorldSpecReconciler) reconcileCellDeployment(ctx context.Context, world
 			Replicas: int32Ptr(1),
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"app":      "fleetforge-cell",
-					"cell-id":  cellID,
-					"world":    worldSpec.Name,
+					"app":     "fleetforge-cell",
+					"cell-id": cellID,
+					"world":   worldSpec.Name,
 				},
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						"app":      "fleetforge-cell",
-						"cell-id":  cellID,
-						"world":    worldSpec.Name,
+						"app":     "fleetforge-cell",
+						"cell-id": cellID,
+						"world":   worldSpec.Name,
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -294,7 +294,7 @@ func (r *WorldSpecReconciler) updateWorldSpecStatus(ctx context.Context, worldSp
 	// Update status
 	worldSpec.Status.ActiveCells = activeCells
 	worldSpec.Status.LastUpdateTime = &metav1.Time{Time: time.Now()}
-	
+
 	if activeCells > 0 {
 		worldSpec.Status.Phase = "Running"
 		worldSpec.Status.Message = fmt.Sprintf("World running with %d active cells", activeCells)
@@ -329,14 +329,14 @@ func (r *WorldSpecReconciler) SetupWithManager(mgr ctrl.Manager) error {
 func calculateCellBoundaries(topology fleetforgev1.WorldTopology) []fleetforgev1.WorldBounds {
 	// Simple implementation: divide world into equal cells
 	cells := make([]fleetforgev1.WorldBounds, topology.InitialCells)
-	
+
 	worldWidth := topology.WorldBoundaries.XMax - topology.WorldBoundaries.XMin
 	cellWidth := worldWidth / float64(topology.InitialCells)
-	
+
 	for i := int32(0); i < topology.InitialCells; i++ {
 		xMin := topology.WorldBoundaries.XMin + (float64(i) * cellWidth)
 		xMax := xMin + cellWidth
-		
+
 		cells[i] = fleetforgev1.WorldBounds{
 			XMin: xMin,
 			XMax: xMax,
@@ -346,7 +346,7 @@ func calculateCellBoundaries(topology fleetforgev1.WorldTopology) []fleetforgev1
 			ZMax: topology.WorldBoundaries.ZMax,
 		}
 	}
-	
+
 	return cells
 }
 

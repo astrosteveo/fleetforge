@@ -26,9 +26,9 @@ import (
 	"strconv"
 	"syscall"
 
-	"github.com/go-logr/logr"
 	fleetforgev1 "github.com/astrosteveo/fleetforge/api/v1"
 	"github.com/astrosteveo/fleetforge/pkg/cell"
+	"github.com/go-logr/logr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
@@ -48,7 +48,7 @@ func main() {
 		healthPort  = flag.Int("health-port", 8081, "Port for health check endpoint")
 		metricsPort = flag.Int("metrics-port", 8080, "Port for metrics endpoint")
 	)
-	
+
 	opts := zap.Options{
 		Development: true,
 	}
@@ -73,7 +73,7 @@ func main() {
 
 	// Create and start cell simulator
 	cellSim := cell.NewCellSimulator(*cellID, boundaries, int32(*maxPlayers), setupLog)
-	
+
 	setupLog.Info("Starting FleetForge Cell Simulator",
 		"cellID", *cellID,
 		"boundaries", boundaries,
@@ -108,23 +108,23 @@ func main() {
 // startHealthServer starts the health check HTTP server
 func startHealthServer(port int, cellSim *cell.CellSimulator, logger logr.Logger) {
 	mux := http.NewServeMux()
-	
+
 	// Health check endpoint
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		health := cellSim.GetHealth()
 		playerCount := cellSim.GetPlayerCount()
-		
+
 		w.Header().Set("Content-Type", "application/json")
-		
+
 		if health == "Healthy" || health == "Near Capacity" {
 			w.WriteHeader(http.StatusOK)
 		} else {
 			w.WriteHeader(http.StatusServiceUnavailable)
 		}
-		
+
 		fmt.Fprintf(w, `{"health": "%s", "playerCount": %d}`, health, playerCount)
 	})
-	
+
 	// Readiness check endpoint
 	mux.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
 		// Cell is ready if it's not overloaded
@@ -137,13 +137,13 @@ func startHealthServer(port int, cellSim *cell.CellSimulator, logger logr.Logger
 			fmt.Fprint(w, `{"ready": false}`)
 		}
 	})
-	
+
 	// Status endpoint with detailed information
 	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
 		status := cellSim.GetStatus()
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		
+
 		fmt.Fprintf(w, `{
 			"id": "%s",
 			"health": "%s",
@@ -154,9 +154,9 @@ func startHealthServer(port int, cellSim *cell.CellSimulator, logger logr.Logger
 				"yMin": %f,
 				"yMax": %f
 			}
-		}`, 
-			status.ID, 
-			status.Health, 
+		}`,
+			status.ID,
+			status.Health,
 			status.CurrentPlayers,
 			status.Boundaries.XMin,
 			status.Boundaries.XMax,

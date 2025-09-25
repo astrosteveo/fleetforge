@@ -25,22 +25,22 @@ import (
 
 func TestCellSimulator_NewCellSimulator(t *testing.T) {
 	logger := zap.New(zap.UseDevMode(true))
-	
+
 	boundaries := fleetforgev1.WorldBounds{
 		XMin: -100.0,
 		XMax: 100.0,
 	}
-	
+
 	cell := NewCellSimulator("test-cell", boundaries, 50, logger)
-	
+
 	if cell.ID != "test-cell" {
 		t.Errorf("Expected cell ID to be 'test-cell', got %s", cell.ID)
 	}
-	
+
 	if cell.maxPlayers != 50 {
 		t.Errorf("Expected max players to be 50, got %d", cell.maxPlayers)
 	}
-	
+
 	if cell.health != "Healthy" {
 		t.Errorf("Expected initial health to be 'Healthy', got %s", cell.health)
 	}
@@ -48,48 +48,48 @@ func TestCellSimulator_NewCellSimulator(t *testing.T) {
 
 func TestCellSimulator_AddPlayer(t *testing.T) {
 	logger := zap.New(zap.UseDevMode(true))
-	
+
 	boundaries := fleetforgev1.WorldBounds{
 		XMin: -100.0,
 		XMax: 100.0,
 	}
-	
+
 	cell := NewCellSimulator("test-cell", boundaries, 2, logger)
-	
+
 	// Test adding valid player
 	position := map[string]interface{}{
 		"x": 50.0,
 	}
-	
+
 	err := cell.AddPlayer("player1", position)
 	if err != nil {
 		t.Errorf("Unexpected error adding player: %v", err)
 	}
-	
+
 	if cell.GetPlayerCount() != 1 {
 		t.Errorf("Expected player count to be 1, got %d", cell.GetPlayerCount())
 	}
-	
+
 	// Test adding player outside boundaries
 	invalidPosition := map[string]interface{}{
 		"x": 200.0, // Outside boundaries
 	}
-	
+
 	err = cell.AddPlayer("player2", invalidPosition)
 	if err == nil {
 		t.Error("Expected error when adding player outside boundaries")
 	}
-	
+
 	// Test adding player at capacity
 	validPosition2 := map[string]interface{}{
 		"x": -50.0,
 	}
-	
+
 	err = cell.AddPlayer("player2", validPosition2)
 	if err != nil {
 		t.Errorf("Unexpected error adding second player: %v", err)
 	}
-	
+
 	// This should fail due to capacity
 	err = cell.AddPlayer("player3", validPosition2)
 	if err == nil {
@@ -99,34 +99,34 @@ func TestCellSimulator_AddPlayer(t *testing.T) {
 
 func TestCellSimulator_RemovePlayer(t *testing.T) {
 	logger := zap.New(zap.UseDevMode(true))
-	
+
 	boundaries := fleetforgev1.WorldBounds{
 		XMin: -100.0,
 		XMax: 100.0,
 	}
-	
+
 	cell := NewCellSimulator("test-cell", boundaries, 50, logger)
-	
+
 	// Add a player first
 	position := map[string]interface{}{
 		"x": 50.0,
 	}
-	
+
 	err := cell.AddPlayer("player1", position)
 	if err != nil {
 		t.Errorf("Unexpected error adding player: %v", err)
 	}
-	
+
 	// Remove the player
 	err = cell.RemovePlayer("player1")
 	if err != nil {
 		t.Errorf("Unexpected error removing player: %v", err)
 	}
-	
+
 	if cell.GetPlayerCount() != 0 {
 		t.Errorf("Expected player count to be 0, got %d", cell.GetPlayerCount())
 	}
-	
+
 	// Try to remove non-existent player
 	err = cell.RemovePlayer("nonexistent")
 	if err == nil {
@@ -136,28 +136,28 @@ func TestCellSimulator_RemovePlayer(t *testing.T) {
 
 func TestCellSimulator_GetStatus(t *testing.T) {
 	logger := zap.New(zap.UseDevMode(true))
-	
+
 	boundaries := fleetforgev1.WorldBounds{
 		XMin: -100.0,
 		XMax: 100.0,
 	}
-	
+
 	cell := NewCellSimulator("test-cell", boundaries, 50, logger)
-	
+
 	status := cell.GetStatus()
-	
+
 	if status.ID != "test-cell" {
 		t.Errorf("Expected status ID to be 'test-cell', got %s", status.ID)
 	}
-	
+
 	if status.CurrentPlayers != 0 {
 		t.Errorf("Expected current players to be 0, got %d", status.CurrentPlayers)
 	}
-	
+
 	if status.Health != "Healthy" {
 		t.Errorf("Expected health to be 'Healthy', got %s", status.Health)
 	}
-	
+
 	if status.Boundaries.XMin != -100.0 {
 		t.Errorf("Expected boundaries XMin to be -100.0, got %f", status.Boundaries.XMin)
 	}

@@ -59,7 +59,11 @@ vet: ## Run go vet against code.
 	go vet ./...
 
 .PHONY: test
-test: manifests generate fmt vet ## Run tests.
+test: fmt vet ## Run tests.
+	go test ./... -coverprofile cover.out
+
+.PHONY: test-with-manifests
+test-with-manifests: manifests generate fmt vet ## Run tests with manifest generation.
 	go test ./... -coverprofile cover.out
 
 .PHONY: lint
@@ -69,7 +73,11 @@ lint: golangci-lint ## Run golangci-lint linter
 ##@ Build
 
 .PHONY: build
-build: manifests generate fmt vet ## Build manager binary.
+build: fmt vet ## Build manager binary.
+	go build -o bin/manager cmd/controller-manager/main.go
+
+.PHONY: build-with-manifests
+build-with-manifests: manifests generate fmt vet ## Build manager binary with manifest generation.
 	go build -o bin/manager cmd/controller-manager/main.go
 
 .PHONY: build-cell
