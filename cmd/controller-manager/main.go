@@ -101,9 +101,10 @@ func main() {
 	}
 
 	if err = (&controllers.WorldSpecReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-		Log:    ctrl.Log.WithName("controllers").WithName("WorldSpec"),
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Log:      ctrl.Log.WithName("controllers").WithName("WorldSpec"),
+		Recorder: mgr.GetEventRecorderFor("worldspec-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "WorldSpec")
 		os.Exit(1)
