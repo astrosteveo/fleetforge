@@ -614,20 +614,25 @@ func (m *DefaultCellManager) createChildCell(spec CellSpec) (*Cell, error) {
 func (m *DefaultCellManager) redistributePlayersOnSplit(parentCell, childCell1, childCell2 *Cell) (int, error) {
 	parentState := parentCell.GetState()
 	child1Bounds := childCell1.GetState().Boundaries
-	child2Bounds := childCell2.GetState().Boundaries
 
 	playersRedistributed := 0
+	child1Players := 0
+	child2Players := 0
+
+	// Calculate the split point (midpoint between child boundaries)
+	splitX := child1Bounds.XMax // This is the boundary between the two children
 
 	for playerID, player := range parentState.Players {
 		// Determine which child cell the player should go to based on position
 		var targetCell *Cell
-		if m.isPositionInBounds(player.Position, child1Bounds) {
+
+		// Use spatial distribution: left side goes to child1, right side goes to child2
+		if player.Position.X <= splitX {
 			targetCell = childCell1
-		} else if m.isPositionInBounds(player.Position, child2Bounds) {
-			targetCell = childCell2
+			child1Players++
 		} else {
-			// Player is on the boundary - assign to child1 by default
-			targetCell = childCell1
+			targetCell = childCell2
+			child2Players++
 		}
 
 		// Add player to target cell
@@ -642,6 +647,10 @@ func (m *DefaultCellManager) redistributePlayersOnSplit(parentCell, childCell1, 
 
 		playersRedistributed++
 	}
+
+	// Log distribution for debugging
+	fmt.Printf("Player redistribution: Child1=%d, Child2=%d (split at X=%.1f)\n",
+		child1Players, child2Players, splitX)
 
 	return playersRedistributed, nil
 }
