@@ -11,14 +11,15 @@ import (
 
 // CellSimulator wraps a cell manager to provide simulation capabilities
 type CellSimulator struct {
-	cellID     CellID
-	boundaries fleetforgev1.WorldBounds
-	MaxPlayers int32 // Made public for access in main
-	logger     logr.Logger
-	manager    CellManager
-	cell       *Cell
-	ctx        context.Context
-	cancel     context.CancelFunc
+	cellID           CellID
+	boundaries       fleetforgev1.WorldBounds
+	MaxPlayers       int32 // Made public for access in main
+	logger           logr.Logger
+	manager          CellManager
+	cell             *Cell
+	ctx              context.Context
+	cancel           context.CancelFunc
+	prometheusMetrics *PrometheusMetrics
 }
 
 // NewCellSimulator creates a new cell simulator
@@ -26,13 +27,14 @@ func NewCellSimulator(cellID string, boundaries fleetforgev1.WorldBounds, maxPla
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &CellSimulator{
-		cellID:     CellID(cellID),
-		boundaries: boundaries,
-		MaxPlayers: maxPlayers,
-		logger:     logger,
-		manager:    NewCellManager(),
-		ctx:        ctx,
-		cancel:     cancel,
+		cellID:            CellID(cellID),
+		boundaries:        boundaries,
+		MaxPlayers:        maxPlayers,
+		logger:            logger,
+		manager:           NewCellManager(),
+		ctx:               ctx,
+		cancel:            cancel,
+		prometheusMetrics: NewPrometheusMetrics(),
 	}
 }
 
@@ -196,4 +198,52 @@ func (cs *CellSimulator) UpdatePlayerPosition(playerID string, position WorldPos
 // GetBoundaries returns the cell boundaries
 func (cs *CellSimulator) GetBoundaries() fleetforgev1.WorldBounds {
 	return cs.boundaries
+}
+
+// UpdatePrometheusMetrics updates Prometheus metrics with current cell data
+func (cs *CellSimulator) UpdatePrometheusMetrics() {
+	if cs.cell == nil {
+		// If cell is not initialized, set minimal metrics
+		cs.prometheusMetrics.SetCellsActive(0)
+		cs.prometheusMetrics.SetUtilizationRate(0.0)
+		cs.prometheusMetrics.CellsTotal.Set(1)     // This cell exists but not active
+		cs.prometheusMetrics.CellsRunning.Set(0)   // Not running yet
+		cs.prometheusMetrics.PlayersTotal.Set(0)
+		cs.prometheusMetrics.CapacityTotal.Set(float64(cs.MaxPlayers))
+		return
+	}
+
+	// Get current metrics from the cell
+	cellMetrics, err := cs.GetMetrics()
+	if err != nil {
+		cs.logger.Error(err, "Failed to get cell metrics")
+		return
+	}
+
+	// Update per-cell metrics
+	cs.prometheusMetrics.UpdateCellMetrics(string(cs.cellID), cellMetrics)
+	
+	// Set cells active to 1 since this cell is active
+	cs.prometheusMetrics.SetCellsActive(1)
+	cs.prometheusMetrics.CellsTotal.Set(1)
+	cs.prometheusMetrics.CellsRunning.Set(1)
+	
+	// Set total player count and capacity
+	if playerCount, ok := cellMetrics["player_count"]; ok {
+		cs.prometheusMetrics.PlayersTotal.Set(playerCount)
+	}
+	cs.prometheusMetrics.CapacityTotal.Set(float64(cs.MaxPlayers))
+	
+	// Calculate utilization rate - for single cell it's just the load
+	if maxPlayers, ok := cellMetrics["max_players"]; ok && maxPlayers > 0 {
+		if playerCount, ok := cellMetrics["player_count"]; ok {
+			utilizationRate := playerCount / maxPlayers
+			cs.prometheusMetrics.SetUtilizationRate(utilizationRate)
+		}
+	}
+}
+
+// GetPrometheusMetrics returns the Prometheus metrics instance
+func (cs *CellSimulator) GetPrometheusMetrics() *PrometheusMetrics {
+	return cs.prometheusMetrics
 }
