@@ -23,9 +23,17 @@ func (f *BasicAOIFilter) GetPlayersInRange(center WorldPosition, radius float64)
 	// This is a simple implementation that would be enhanced in a real system
 	// In practice, this would use spatial indexing (quadtree, octree, etc.)
 	var players []PlayerID
-	
-	// For now, this is a placeholder - the actual filtering would be done
-	// by the Cell that has access to the player positions
+
+	// TODO: Replace the following with actual access to player positions.
+	// For demonstration, assuming a function GetAllPlayers() []struct{ID PlayerID; Pos WorldPosition}
+	// Example:
+	// for _, p := range GetAllPlayers() {
+	//     if f.calculateDistance(center, p.Pos) <= radius {
+	//         players = append(players, p.ID)
+	//     }
+	// }
+
+	// Placeholder: no player data available in this context.
 	return players
 }
 
