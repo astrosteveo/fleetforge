@@ -103,7 +103,7 @@ func (m *DefaultCellManager) AddPlayer(cellID CellID, player *PlayerState) error
 
 	cell, exists := m.cells[cellID]
 	if !exists {
-		return fmt.Errorf("cell with ID %s not found", cellID)
+		return fmt.Errorf(ErrMsgCellNotFound, cellID)
 	}
 
 	// Check if player is already in another cell
@@ -134,7 +134,7 @@ func (m *DefaultCellManager) RemovePlayer(cellID CellID, playerID PlayerID) erro
 
 	cell, exists := m.cells[cellID]
 	if !exists {
-		return fmt.Errorf("cell with ID %s not found", cellID)
+		return fmt.Errorf(ErrMsgCellNotFound, cellID)
 	}
 
 	if err := cell.RemovePlayer(playerID); err != nil {
@@ -154,7 +154,7 @@ func (m *DefaultCellManager) UpdatePlayerPosition(cellID CellID, playerID Player
 
 	cell, exists := m.cells[cellID]
 	if !exists {
-		return fmt.Errorf("cell with ID %s not found", cellID)
+		return fmt.Errorf(ErrMsgCellNotFound, cellID)
 	}
 
 	if err := cell.UpdatePlayerPosition(playerID, position); err != nil {
@@ -176,7 +176,7 @@ func (m *DefaultCellManager) GetHealth(cellID CellID) (*HealthStatus, error) {
 
 	cell, exists := m.cells[cellID]
 	if !exists {
-		return nil, fmt.Errorf("cell with ID %s not found", cellID)
+		return nil, fmt.Errorf(ErrMsgCellNotFound, cellID)
 	}
 
 	return cell.GetHealth(), nil
@@ -189,7 +189,7 @@ func (m *DefaultCellManager) GetMetrics(cellID CellID) (map[string]float64, erro
 
 	cell, exists := m.cells[cellID]
 	if !exists {
-		return nil, fmt.Errorf("cell with ID %s not found", cellID)
+		return nil, fmt.Errorf(ErrMsgCellNotFound, cellID)
 	}
 
 	return cell.GetMetrics(), nil
@@ -202,7 +202,7 @@ func (m *DefaultCellManager) Checkpoint(cellID CellID) error {
 
 	cell, exists := m.cells[cellID]
 	if !exists {
-		return fmt.Errorf("cell with ID %s not found", cellID)
+		return fmt.Errorf(ErrMsgCellNotFound, cellID)
 	}
 
 	checkpoint, err := cell.Checkpoint()
@@ -229,7 +229,7 @@ func (m *DefaultCellManager) Restore(cellID CellID, checkpoint []byte) error {
 
 	cell, exists := m.cells[cellID]
 	if !exists {
-		return fmt.Errorf("cell with ID %s not found", cellID)
+		return fmt.Errorf(ErrMsgCellNotFound, cellID)
 	}
 
 	if err := cell.Restore(checkpoint); err != nil {
