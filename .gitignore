@@ -3,7 +3,7 @@
 # awesome-copilot.config.yml
 
 # Go build artifacts
-bin/
+/bin/
 *.exe
 *.exe~
 *.dll
@@ -11,6 +11,15 @@ bin/
 *.dylib
 *.test
 *.out
+go.work
+go.work.sum
+
+# Go coverage files
+coverage.out
+coverage.html
+
+# Vendor directory
+/vendor/
 
 # Common Node.js ignores (if needed for future development)
 node_modules/
@@ -30,10 +39,15 @@ Thumbs.db
 # IDE files
 *.swp
 *.swo
+.vscode/settings.json
+.idea/
 
 # Temporary files
 *.tmp
 *.temp
+
+# Docker and Kubernetes
+*.log
 
 # Test coverage
 cover.out

@@ -1,3 +1,5 @@
+<<<<<<< HEAD
+=======
 /*
 Copyright 2024 FleetForge Authors.
 
@@ -14,6 +16,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+>>>>>>> origin/main
 // Package v1 contains API Schema definitions for the fleetforge v1 API group
 // +kubebuilder:object:generate=true
 // +groupName=fleetforge.io
@@ -33,4 +36,8 @@ var (
 
 	// AddToScheme adds the types in this group-version to the given scheme.
 	AddToScheme = SchemeBuilder.AddToScheme
+<<<<<<< HEAD
 )
+=======
+)
+>>>>>>> origin/main

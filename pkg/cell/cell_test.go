@@ -1,164 +1,542 @@
-/*
-Copyright 2024 FleetForge Authors.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package cell
 
 import (
+	"context"
 	"testing"
+	"time"
 
-	fleetforgev1 "github.com/astrosteveo/fleetforge/api/v1"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"github.com/astrosteveo/fleetforge/api/v1"
 )
 
-func TestCellSimulator_NewCellSimulator(t *testing.T) {
-	logger := zap.New(zap.UseDevMode(true))
-
-	boundaries := fleetforgev1.WorldBounds{
-		XMin: -100.0,
-		XMax: 100.0,
+func TestNewCell(t *testing.T) {
+	spec := CellSpec{
+		ID: "test-cell-1",
+		Boundaries: v1.WorldBoundaries{
+			XMin: 0, XMax: 1000,
+			YMin: 0, YMax: 1000,
+		},
+		Capacity: CellCapacity{
+			MaxPlayers: 50,
+			CPULimit:   "500m",
+			MemoryLimit: "1Gi",
+		},
 	}
 
-	cell := NewCellSimulator("test-cell", boundaries, 50, logger)
-
-	if cell.ID != "test-cell" {
-		t.Errorf("Expected cell ID to be 'test-cell', got %s", cell.ID)
+	cell, err := NewCell(spec)
+	if err != nil {
+		t.Fatalf("Failed to create cell: %v", err)
 	}
 
-	if cell.maxPlayers != 50 {
-		t.Errorf("Expected max players to be 50, got %d", cell.maxPlayers)
+	if cell.state.ID != spec.ID {
+		t.Errorf("Expected cell ID %s, got %s", spec.ID, cell.state.ID)
 	}
 
-	if cell.health != "Healthy" {
-		t.Errorf("Expected initial health to be 'Healthy', got %s", cell.health)
+	if cell.state.Capacity.MaxPlayers != spec.Capacity.MaxPlayers {
+		t.Errorf("Expected capacity %d, got %d", spec.Capacity.MaxPlayers, cell.state.Capacity.MaxPlayers)
+	}
+
+	if cell.state.Phase != "Initializing" {
+		t.Errorf("Expected phase 'Initializing', got %s", cell.state.Phase)
 	}
 }
 
-func TestCellSimulator_AddPlayer(t *testing.T) {
-	logger := zap.New(zap.UseDevMode(true))
-
-	boundaries := fleetforgev1.WorldBounds{
-		XMin: -100.0,
-		XMax: 100.0,
+func TestNewCell_EmptyID(t *testing.T) {
+	spec := CellSpec{
+		ID: "",
+		Boundaries: v1.WorldBoundaries{
+			XMin: 0, XMax: 1000,
+			YMin: 0, YMax: 1000,
+		},
 	}
 
-	cell := NewCellSimulator("test-cell", boundaries, 2, logger)
-
-	// Test adding valid player
-	position := map[string]interface{}{
-		"x": 50.0,
-	}
-
-	err := cell.AddPlayer("player1", position)
-	if err != nil {
-		t.Errorf("Unexpected error adding player: %v", err)
-	}
-
-	if cell.GetPlayerCount() != 1 {
-		t.Errorf("Expected player count to be 1, got %d", cell.GetPlayerCount())
-	}
-
-	// Test adding player outside boundaries
-	invalidPosition := map[string]interface{}{
-		"x": 200.0, // Outside boundaries
-	}
-
-	err = cell.AddPlayer("player2", invalidPosition)
+	_, err := NewCell(spec)
 	if err == nil {
-		t.Error("Expected error when adding player outside boundaries")
+		t.Error("Expected error for empty cell ID")
+	}
+}
+
+func TestCell_StartStop(t *testing.T) {
+	spec := CellSpec{
+		ID: "test-cell-2",
+		Boundaries: v1.WorldBoundaries{
+			XMin: 0, XMax: 1000,
+			YMin: 0, YMax: 1000,
+		},
+		Capacity: CellCapacity{MaxPlayers: 10},
 	}
 
-	// Test adding player at capacity
-	validPosition2 := map[string]interface{}{
-		"x": -50.0,
-	}
-
-	err = cell.AddPlayer("player2", validPosition2)
+	cell, err := NewCell(spec)
 	if err != nil {
-		t.Errorf("Unexpected error adding second player: %v", err)
+		t.Fatalf("Failed to create cell: %v", err)
 	}
 
-	// This should fail due to capacity
-	err = cell.AddPlayer("player3", validPosition2)
+	ctx := context.Background()
+	err = cell.Start(ctx)
+	if err != nil {
+		t.Fatalf("Failed to start cell: %v", err)
+	}
+
+	// Wait for cell to become ready
+	time.Sleep(time.Millisecond * 150)
+
+	state := cell.GetState()
+	if state.Phase != "Running" {
+		t.Errorf("Expected phase 'Running', got %s", state.Phase)
+	}
+
+	if !state.Ready {
+		t.Error("Expected cell to be ready")
+	}
+
+	err = cell.Stop()
+	if err != nil {
+		t.Fatalf("Failed to stop cell: %v", err)
+	}
+
+	state = cell.GetState()
+	if state.Phase != "Stopped" {
+		t.Errorf("Expected phase 'Stopped', got %s", state.Phase)
+	}
+}
+
+func TestCell_AddPlayer(t *testing.T) {
+	spec := CellSpec{
+		ID: "test-cell-3",
+		Boundaries: v1.WorldBoundaries{
+			XMin: 0, XMax: 1000,
+			YMin: 0, YMax: 1000,
+		},
+		Capacity: CellCapacity{MaxPlayers: 10},
+	}
+
+	cell, err := NewCell(spec)
+	if err != nil {
+		t.Fatalf("Failed to create cell: %v", err)
+	}
+
+	ctx := context.Background()
+	err = cell.Start(ctx)
+	if err != nil {
+		t.Fatalf("Failed to start cell: %v", err)
+	}
+
+	// Wait for cell to become ready
+	time.Sleep(time.Millisecond * 150)
+
+	player := &PlayerState{
+		ID:       "player-1",
+		Position: WorldPosition{X: 500, Y: 500},
+		Connected: true,
+	}
+
+	err = cell.AddPlayer(player)
+	if err != nil {
+		t.Fatalf("Failed to add player: %v", err)
+	}
+
+	state := cell.GetState()
+	if state.PlayerCount != 1 {
+		t.Errorf("Expected player count 1, got %d", state.PlayerCount)
+	}
+
+	if _, exists := state.Players[player.ID]; !exists {
+		t.Error("Player not found in cell state")
+	}
+
+	cell.Stop()
+}
+
+func TestCell_AddPlayer_OutOfBounds(t *testing.T) {
+	spec := CellSpec{
+		ID: "test-cell-4",
+		Boundaries: v1.WorldBoundaries{
+			XMin: 0, XMax: 1000,
+			YMin: 0, YMax: 1000,
+		},
+		Capacity: CellCapacity{MaxPlayers: 10},
+	}
+
+	cell, err := NewCell(spec)
+	if err != nil {
+		t.Fatalf("Failed to create cell: %v", err)
+	}
+
+	ctx := context.Background()
+	err = cell.Start(ctx)
+	if err != nil {
+		t.Fatalf("Failed to start cell: %v", err)
+	}
+
+	// Wait for cell to become ready
+	time.Sleep(time.Millisecond * 150)
+
+	player := &PlayerState{
+		ID:       "player-1",
+		Position: WorldPosition{X: 1500, Y: 500}, // Outside boundaries
+		Connected: true,
+	}
+
+	err = cell.AddPlayer(player)
+	if err == nil {
+		t.Error("Expected error for player outside boundaries")
+	}
+
+	cell.Stop()
+}
+
+func TestCell_AddPlayer_AtCapacity(t *testing.T) {
+	spec := CellSpec{
+		ID: "test-cell-5",
+		Boundaries: v1.WorldBoundaries{
+			XMin: 0, XMax: 1000,
+			YMin: 0, YMax: 1000,
+		},
+		Capacity: CellCapacity{MaxPlayers: 1},
+	}
+
+	cell, err := NewCell(spec)
+	if err != nil {
+		t.Fatalf("Failed to create cell: %v", err)
+	}
+
+	ctx := context.Background()
+	err = cell.Start(ctx)
+	if err != nil {
+		t.Fatalf("Failed to start cell: %v", err)
+	}
+
+	// Wait for cell to become ready
+	time.Sleep(time.Millisecond * 150)
+
+	// Add first player
+	player1 := &PlayerState{
+		ID:       "player-1",
+		Position: WorldPosition{X: 500, Y: 500},
+		Connected: true,
+	}
+
+	err = cell.AddPlayer(player1)
+	if err != nil {
+		t.Fatalf("Failed to add first player: %v", err)
+	}
+
+	// Try to add second player (should fail)
+	player2 := &PlayerState{
+		ID:       "player-2",
+		Position: WorldPosition{X: 600, Y: 600},
+		Connected: true,
+	}
+
+	err = cell.AddPlayer(player2)
 	if err == nil {
 		t.Error("Expected error when adding player beyond capacity")
 	}
+
+	cell.Stop()
 }
 
-func TestCellSimulator_RemovePlayer(t *testing.T) {
-	logger := zap.New(zap.UseDevMode(true))
-
-	boundaries := fleetforgev1.WorldBounds{
-		XMin: -100.0,
-		XMax: 100.0,
+func TestCell_RemovePlayer(t *testing.T) {
+	spec := CellSpec{
+		ID: "test-cell-6",
+		Boundaries: v1.WorldBoundaries{
+			XMin: 0, XMax: 1000,
+			YMin: 0, YMax: 1000,
+		},
+		Capacity: CellCapacity{MaxPlayers: 10},
 	}
 
-	cell := NewCellSimulator("test-cell", boundaries, 50, logger)
-
-	// Add a player first
-	position := map[string]interface{}{
-		"x": 50.0,
-	}
-
-	err := cell.AddPlayer("player1", position)
+	cell, err := NewCell(spec)
 	if err != nil {
-		t.Errorf("Unexpected error adding player: %v", err)
+		t.Fatalf("Failed to create cell: %v", err)
 	}
 
-	// Remove the player
-	err = cell.RemovePlayer("player1")
+	ctx := context.Background()
+	err = cell.Start(ctx)
 	if err != nil {
-		t.Errorf("Unexpected error removing player: %v", err)
+		t.Fatalf("Failed to start cell: %v", err)
 	}
 
-	if cell.GetPlayerCount() != 0 {
-		t.Errorf("Expected player count to be 0, got %d", cell.GetPlayerCount())
+	// Wait for cell to become ready
+	time.Sleep(time.Millisecond * 150)
+
+	player := &PlayerState{
+		ID:       "player-1",
+		Position: WorldPosition{X: 500, Y: 500},
+		Connected: true,
 	}
 
-	// Try to remove non-existent player
-	err = cell.RemovePlayer("nonexistent")
-	if err == nil {
-		t.Error("Expected error when removing non-existent player")
+	err = cell.AddPlayer(player)
+	if err != nil {
+		t.Fatalf("Failed to add player: %v", err)
 	}
+
+	err = cell.RemovePlayer(player.ID)
+	if err != nil {
+		t.Fatalf("Failed to remove player: %v", err)
+	}
+
+	state := cell.GetState()
+	if state.PlayerCount != 0 {
+		t.Errorf("Expected player count 0, got %d", state.PlayerCount)
+	}
+
+	if _, exists := state.Players[player.ID]; exists {
+		t.Error("Player still exists in cell state after removal")
+	}
+
+	cell.Stop()
 }
 
-func TestCellSimulator_GetStatus(t *testing.T) {
-	logger := zap.New(zap.UseDevMode(true))
-
-	boundaries := fleetforgev1.WorldBounds{
-		XMin: -100.0,
-		XMax: 100.0,
+func TestCell_UpdatePlayerPosition(t *testing.T) {
+	spec := CellSpec{
+		ID: "test-cell-7",
+		Boundaries: v1.WorldBoundaries{
+			XMin: 0, XMax: 1000,
+			YMin: 0, YMax: 1000,
+		},
+		Capacity: CellCapacity{MaxPlayers: 10},
 	}
 
-	cell := NewCellSimulator("test-cell", boundaries, 50, logger)
-
-	status := cell.GetStatus()
-
-	if status.ID != "test-cell" {
-		t.Errorf("Expected status ID to be 'test-cell', got %s", status.ID)
+	cell, err := NewCell(spec)
+	if err != nil {
+		t.Fatalf("Failed to create cell: %v", err)
 	}
 
-	if status.CurrentPlayers != 0 {
-		t.Errorf("Expected current players to be 0, got %d", status.CurrentPlayers)
+	ctx := context.Background()
+	err = cell.Start(ctx)
+	if err != nil {
+		t.Fatalf("Failed to start cell: %v", err)
 	}
 
-	if status.Health != "Healthy" {
-		t.Errorf("Expected health to be 'Healthy', got %s", status.Health)
+	// Wait for cell to become ready
+	time.Sleep(time.Millisecond * 150)
+
+	player := &PlayerState{
+		ID:       "player-1",
+		Position: WorldPosition{X: 500, Y: 500},
+		Connected: true,
 	}
 
-	if status.Boundaries.XMin != -100.0 {
-		t.Errorf("Expected boundaries XMin to be -100.0, got %f", status.Boundaries.XMin)
+	err = cell.AddPlayer(player)
+	if err != nil {
+		t.Fatalf("Failed to add player: %v", err)
 	}
+
+	newPosition := WorldPosition{X: 600, Y: 600}
+	err = cell.UpdatePlayerPosition(player.ID, newPosition)
+	if err != nil {
+		t.Fatalf("Failed to update player position: %v", err)
+	}
+
+	state := cell.GetState()
+	updatedPlayer := state.Players[player.ID]
+	if updatedPlayer.Position.X != newPosition.X || updatedPlayer.Position.Y != newPosition.Y {
+		t.Errorf("Expected position %v, got %v", newPosition, updatedPlayer.Position)
+	}
+
+	cell.Stop()
+}
+
+func TestCell_GetPlayersInArea(t *testing.T) {
+	spec := CellSpec{
+		ID: "test-cell-8",
+		Boundaries: v1.WorldBoundaries{
+			XMin: 0, XMax: 1000,
+			YMin: 0, YMax: 1000,
+		},
+		Capacity: CellCapacity{MaxPlayers: 10},
+	}
+
+	cell, err := NewCell(spec)
+	if err != nil {
+		t.Fatalf("Failed to create cell: %v", err)
+	}
+
+	ctx := context.Background()
+	err = cell.Start(ctx)
+	if err != nil {
+		t.Fatalf("Failed to start cell: %v", err)
+	}
+
+	// Wait for cell to become ready
+	time.Sleep(time.Millisecond * 150)
+
+	// Add players at different positions
+	players := []*PlayerState{
+		{ID: "player-1", Position: WorldPosition{X: 100, Y: 100}, Connected: true},
+		{ID: "player-2", Position: WorldPosition{X: 150, Y: 150}, Connected: true},
+		{ID: "player-3", Position: WorldPosition{X: 500, Y: 500}, Connected: true},
+	}
+
+	for _, player := range players {
+		err = cell.AddPlayer(player)
+		if err != nil {
+			t.Fatalf("Failed to add player %s: %v", player.ID, err)
+		}
+	}
+
+	// Get players in area around (100, 100) with radius 100
+	center := WorldPosition{X: 100, Y: 100}
+	playersInArea := cell.GetPlayersInArea(center, 100)
+
+	// Should include player-1 and player-2, but not player-3
+	if len(playersInArea) != 2 {
+		t.Errorf("Expected 2 players in area, got %d", len(playersInArea))
+	}
+
+	cell.Stop()
+}
+
+func TestCell_Health(t *testing.T) {
+	spec := CellSpec{
+		ID: "test-cell-9",
+		Boundaries: v1.WorldBoundaries{
+			XMin: 0, XMax: 1000,
+			YMin: 0, YMax: 1000,
+		},
+		Capacity: CellCapacity{MaxPlayers: 10},
+	}
+
+	cell, err := NewCell(spec)
+	if err != nil {
+		t.Fatalf("Failed to create cell: %v", err)
+	}
+
+	ctx := context.Background()
+	err = cell.Start(ctx)
+	if err != nil {
+		t.Fatalf("Failed to start cell: %v", err)
+	}
+
+	// Wait for cell to become ready
+	time.Sleep(time.Millisecond * 150)
+
+	health := cell.GetHealth()
+	if !health.Healthy {
+		t.Error("Expected cell to be healthy")
+	}
+
+	if health.PlayerCount != 0 {
+		t.Errorf("Expected player count 0, got %d", health.PlayerCount)
+	}
+
+	if health.Uptime <= 0 {
+		t.Error("Expected positive uptime")
+	}
+
+	cell.Stop()
+}
+
+func TestCell_Metrics(t *testing.T) {
+	spec := CellSpec{
+		ID: "test-cell-10",
+		Boundaries: v1.WorldBoundaries{
+			XMin: 0, XMax: 1000,
+			YMin: 0, YMax: 1000,
+		},
+		Capacity: CellCapacity{MaxPlayers: 10},
+	}
+
+	cell, err := NewCell(spec)
+	if err != nil {
+		t.Fatalf("Failed to create cell: %v", err)
+	}
+
+	ctx := context.Background()
+	err = cell.Start(ctx)
+	if err != nil {
+		t.Fatalf("Failed to start cell: %v", err)
+	}
+
+	// Wait for cell to become ready
+	time.Sleep(time.Millisecond * 150)
+
+	metrics := cell.GetMetrics()
+
+	expectedMetrics := []string{
+		"player_count", "max_players", "cpu_usage", "memory_usage",
+		"tick_rate", "tick_duration_ms", "messages_per_second",
+		"bytes_per_second", "state_size_bytes", "uptime_seconds",
+	}
+
+	for _, metric := range expectedMetrics {
+		if _, exists := metrics[metric]; !exists {
+			t.Errorf("Expected metric %s not found", metric)
+		}
+	}
+
+	cell.Stop()
+}
+
+func TestCell_CheckpointRestore(t *testing.T) {
+	spec := CellSpec{
+		ID: "test-cell-11",
+		Boundaries: v1.WorldBoundaries{
+			XMin: 0, XMax: 1000,
+			YMin: 0, YMax: 1000,
+		},
+		Capacity: CellCapacity{MaxPlayers: 10},
+	}
+
+	cell, err := NewCell(spec)
+	if err != nil {
+		t.Fatalf("Failed to create cell: %v", err)
+	}
+
+	ctx := context.Background()
+	err = cell.Start(ctx)
+	if err != nil {
+		t.Fatalf("Failed to start cell: %v", err)
+	}
+
+	// Wait for cell to become ready
+	time.Sleep(time.Millisecond * 150)
+
+	// Add a player
+	player := &PlayerState{
+		ID:       "player-1",
+		Position: WorldPosition{X: 500, Y: 500},
+		Connected: true,
+	}
+
+	err = cell.AddPlayer(player)
+	if err != nil {
+		t.Fatalf("Failed to add player: %v", err)
+	}
+
+	// Create checkpoint
+	checkpoint, err := cell.Checkpoint()
+	if err != nil {
+		t.Fatalf("Failed to create checkpoint: %v", err)
+	}
+
+	// Remove player
+	err = cell.RemovePlayer(player.ID)
+	if err != nil {
+		t.Fatalf("Failed to remove player: %v", err)
+	}
+
+	// Verify player is gone
+	state := cell.GetState()
+	if state.PlayerCount != 0 {
+		t.Errorf("Expected player count 0 after removal, got %d", state.PlayerCount)
+	}
+
+	// Restore from checkpoint
+	err = cell.Restore(checkpoint)
+	if err != nil {
+		t.Fatalf("Failed to restore from checkpoint: %v", err)
+	}
+
+	// Verify player is back
+	state = cell.GetState()
+	if state.PlayerCount != 1 {
+		t.Errorf("Expected player count 1 after restore, got %d", state.PlayerCount)
+	}
+
+	if _, exists := state.Players[player.ID]; !exists {
+		t.Error("Player not found after restore")
+	}
+
+	cell.Stop()
 }

@@ -1,287 +1,391 @@
-/*
-Copyright 2024 FleetForge Authors.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package cell
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"math"
 	"sync"
 	"time"
-
-	fleetforgev1 "github.com/astrosteveo/fleetforge/api/v1"
-	"github.com/go-logr/logr"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// PlayerState represents the state of a player within a cell
-type PlayerState struct {
-	ID       string                 `json:"id"`
-	Position map[string]interface{} `json:"position"`
-	Data     map[string]interface{} `json:"data"`
-}
-
-// CellSimulator represents a single cell instance that manages a spatial region
-type CellSimulator struct {
-	// Basic cell configuration
-	ID         string                   `json:"id"`
-	Boundaries fleetforgev1.WorldBounds `json:"boundaries"`
-
-	// Player management
-	players        map[string]*PlayerState
-	maxPlayers     int32
-	currentPlayers int32
-	playersMutex   sync.RWMutex
-
-	// Health and monitoring
-	health        string
-	lastHeartbeat time.Time
-
-	// State management
+// Cell represents a single game simulation cell
+type Cell struct {
+	state      *CellState
+	aoi        AOIFilter
+	metrics    *CellMetrics
+	shutdown   chan struct{}
+	ticker     *time.Ticker
+	startTime  time.Time
+	readyTimer *time.Timer
+	
+	// Configuration
+	tickRate      time.Duration
+	syncRadius    float64
 	checkpointInterval time.Duration
-	lastCheckpoint     time.Time
-
-	// Context and logging
-	ctx    context.Context
-	cancel context.CancelFunc
-	logger logr.Logger
-
-	// Metrics
-	metricsPort int
+	gracefulShutdownTimeout time.Duration
+	
+	mu sync.RWMutex
 }
 
-// NewCellSimulator creates a new cell simulator instance
-func NewCellSimulator(id string, boundaries fleetforgev1.WorldBounds, maxPlayers int32, logger logr.Logger) *CellSimulator {
-	ctx, cancel := context.WithCancel(context.Background())
-
-	return &CellSimulator{
-		ID:                 id,
-		Boundaries:         boundaries,
-		players:            make(map[string]*PlayerState),
-		maxPlayers:         maxPlayers,
-		currentPlayers:     0,
-		health:             "Healthy",
-		lastHeartbeat:      time.Now(),
-		checkpointInterval: 5 * time.Minute,
-		lastCheckpoint:     time.Now(),
-		ctx:                ctx,
-		cancel:             cancel,
-		logger:             logger.WithValues("cellID", id),
-		metricsPort:        8080,
+// NewCell creates a new cell instance
+func NewCell(spec CellSpec) (*Cell, error) {
+	if spec.ID == "" {
+		return nil, fmt.Errorf("cell ID cannot be empty")
 	}
+	
+	if spec.Capacity.MaxPlayers <= 0 {
+		spec.Capacity.MaxPlayers = 100 // Default
+	}
+	
+	cell := &Cell{
+		state: &CellState{
+			ID:         spec.ID,
+			Boundaries: spec.Boundaries,
+			CreatedAt:  time.Now(),
+			UpdatedAt:  time.Now(),
+			Capacity:   spec.Capacity,
+			Players:    make(map[PlayerID]*PlayerState),
+			PlayerCount: 0,
+			Neighbors:  make([]CellID, 0),
+			Tick:       0,
+			GameState:  spec.GameConfig,
+			Phase:      "Initializing",
+			Ready:      false,
+		},
+		aoi:                     NewBasicAOIFilter(),
+		metrics:                 &CellMetrics{},
+		shutdown:                make(chan struct{}),
+		tickRate:               time.Millisecond * 50, // 20 TPS
+		syncRadius:             100.0,                 // Default sync radius
+		checkpointInterval:     time.Second * 30,      // Checkpoint every 30 seconds
+		gracefulShutdownTimeout: time.Second * 5,      // Configurable shutdown timeout
+		startTime:              time.Now(),
+	}
+	
+	return cell, nil
 }
 
-// Start begins the cell simulation lifecycle
-func (c *CellSimulator) Start() error {
-	c.logger.Info("Starting cell simulator", "boundaries", c.Boundaries, "maxPlayers", c.maxPlayers)
-
-	// Start health check routine
-	go c.healthCheckLoop()
-
-	// Start checkpoint routine
-	go c.checkpointLoop()
-
-	// Start metrics server
-	go c.startMetricsServer()
-
+// Start begins the cell simulation loop
+func (c *Cell) Start(ctx context.Context) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	
+	if c.state.Phase != "Initializing" {
+		return fmt.Errorf("cell is not in initializing phase")
+	}
+	
+	c.state.Phase = "Starting"
+	c.state.Ready = false
+	c.ticker = time.NewTicker(c.tickRate)
+	
+	go c.simulationLoop(ctx)
+	go c.checkpointLoop(ctx)
+	
+	// Mark as ready after a brief initialization, but guard against race conditions
+	c.readyTimer = time.AfterFunc(time.Millisecond*100, func() {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		// Only transition to Running if still in Starting phase
+		if c.state.Phase == "Starting" {
+			c.state.Phase = "Running"
+			c.state.Ready = true
+		}
+	})
+	
 	return nil
 }
 
-// Stop gracefully shuts down the cell simulator
-func (c *CellSimulator) Stop() error {
-	c.logger.Info("Stopping cell simulator")
-
-	// Cancel context to stop all goroutines
-	c.cancel()
-
-	// Perform final checkpoint
-	c.performCheckpoint()
-
+// Stop gracefully shuts down the cell
+func (c *Cell) Stop() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	
+	if c.state.Phase == "Stopped" {
+		return nil
+	}
+	
+	c.state.Phase = "Stopping"
+	c.state.Ready = false
+	
+	// Cancel the ready timer if it hasn't fired yet
+	if c.readyTimer != nil {
+		c.readyTimer.Stop()
+	}
+	
+	close(c.shutdown)
+	
+	if c.ticker != nil {
+		c.ticker.Stop()
+	}
+	
+	c.state.Phase = "Stopped"
 	return nil
 }
 
-// AddPlayer adds a player to this cell
-func (c *CellSimulator) AddPlayer(playerID string, position map[string]interface{}) error {
-	c.playersMutex.Lock()
-	defer c.playersMutex.Unlock()
-
-	if c.currentPlayers >= c.maxPlayers {
-		return fmt.Errorf("cell %s is at capacity (%d/%d)", c.ID, c.currentPlayers, c.maxPlayers)
+// simulationLoop runs the main simulation tick
+func (c *Cell) simulationLoop(ctx context.Context) {
+	defer c.ticker.Stop()
+	
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-c.shutdown:
+			return
+		case <-c.ticker.C:
+			c.tick()
+		}
 	}
+}
 
-	if _, exists := c.players[playerID]; exists {
-		return fmt.Errorf("player %s already exists in cell %s", playerID, c.ID)
+// tick performs one simulation update
+func (c *Cell) tick() {
+	start := time.Now()
+	
+	c.mu.Lock()
+	c.state.Tick++
+	c.state.UpdatedAt = time.Now()
+	
+	// Update player states
+	c.updatePlayerStates()
+	
+	// Update metrics
+	c.updateMetrics()
+	
+	c.mu.Unlock()
+	
+	// Calculate tick performance
+	duration := time.Since(start)
+	c.metrics.TickDuration = duration.Seconds() * 1000 // milliseconds
+	c.metrics.TickRate = 1.0 / c.tickRate.Seconds()
+}
+
+// updatePlayerStates updates all player states in the cell
+func (c *Cell) updatePlayerStates() {
+	now := time.Now()
+	
+	// Check for disconnected players (haven't been seen in 30 seconds)
+	for _, player := range c.state.Players {
+		if now.Sub(player.LastSeen) > time.Second*30 {
+			player.Connected = false
+		}
 	}
+}
 
-	// Check if player position is within cell boundaries
-	if !c.isPositionWithinBounds(position) {
+// updateMetrics updates cell performance metrics
+func (c *Cell) updateMetrics() {
+	c.metrics.PlayerCount = c.state.PlayerCount
+	c.metrics.MaxPlayers = c.state.Capacity.MaxPlayers
+	c.metrics.LastCheckpoint = c.state.UpdatedAt
+}
+
+// checkpointLoop periodically checkpoints the cell state
+func (c *Cell) checkpointLoop(ctx context.Context) {
+	ticker := time.NewTicker(c.checkpointInterval)
+	defer ticker.Stop()
+	
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-c.shutdown:
+			return
+		case <-ticker.C:
+			c.createCheckpoint()
+		}
+	}
+}
+
+// createCheckpoint creates a checkpoint of the current cell state
+func (c *Cell) createCheckpoint() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	
+	// TODO: Implement persistent storage for checkpoints
+	// Next steps:
+	// 1. Add file-based persistence to local disk
+	// 2. Integrate with cloud storage (S3, GCS, etc.) for production
+	// 3. Add checkpoint versioning and retention policies
+	// 4. Implement delta checkpoints for efficiency
+	
+	// For now, we just update the metrics
+	c.metrics.LastCheckpoint = time.Now()
+	c.metrics.StateSize = int64(len(c.state.Players) * 1024) // Rough estimate
+}
+
+// AddPlayer adds a player to the cell
+func (c *Cell) AddPlayer(player *PlayerState) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	
+	if !c.state.Ready {
+		return fmt.Errorf("cell is not ready")
+	}
+	
+	if c.state.PlayerCount >= c.state.Capacity.MaxPlayers {
+		return fmt.Errorf("cell is at capacity")
+	}
+	
+	// Check if player is within cell boundaries
+	if !c.isWithinBoundaries(player.Position) {
 		return fmt.Errorf("player position is outside cell boundaries")
 	}
-
-	c.players[playerID] = &PlayerState{
-		ID:       playerID,
-		Position: position,
-		Data:     make(map[string]interface{}),
-	}
-
-	c.currentPlayers++
-	c.logger.Info("Player added to cell", "playerID", playerID, "currentPlayers", c.currentPlayers)
-
+	
+	player.LastSeen = time.Now()
+	player.Connected = true
+	
+	c.state.Players[player.ID] = player
+	c.state.PlayerCount = len(c.state.Players)
+	
 	return nil
 }
 
-// RemovePlayer removes a player from this cell
-func (c *CellSimulator) RemovePlayer(playerID string) error {
-	c.playersMutex.Lock()
-	defer c.playersMutex.Unlock()
-
-	if _, exists := c.players[playerID]; !exists {
-		return fmt.Errorf("player %s not found in cell %s", playerID, c.ID)
+// RemovePlayer removes a player from the cell
+func (c *Cell) RemovePlayer(playerID PlayerID) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	
+	if _, exists := c.state.Players[playerID]; !exists {
+		return fmt.Errorf("player not found in cell")
 	}
-
-	delete(c.players, playerID)
-	c.currentPlayers--
-	c.logger.Info("Player removed from cell", "playerID", playerID, "currentPlayers", c.currentPlayers)
-
+	
+	delete(c.state.Players, playerID)
+	c.state.PlayerCount = len(c.state.Players)
+	
 	return nil
 }
 
-// GetPlayerCount returns the current number of players in the cell
-func (c *CellSimulator) GetPlayerCount() int32 {
-	c.playersMutex.RLock()
-	defer c.playersMutex.RUnlock()
-	return c.currentPlayers
+// UpdatePlayerPosition updates a player's position
+func (c *Cell) UpdatePlayerPosition(playerID PlayerID, position WorldPosition) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	
+	player, exists := c.state.Players[playerID]
+	if !exists {
+		return fmt.Errorf("player not found in cell")
+	}
+	
+	// Check if new position is still within boundaries
+	if !c.isWithinBoundaries(position) {
+		return fmt.Errorf("new position is outside cell boundaries")
+	}
+	
+	player.Position = position
+	player.LastSeen = time.Now()
+	player.Connected = true
+	
+	return nil
+}
+
+// GetPlayersInArea returns players within a specific area
+func (c *Cell) GetPlayersInArea(center WorldPosition, radius float64) []*PlayerState {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	
+	var players []*PlayerState
+	
+	for _, player := range c.state.Players {
+		if c.calculateDistance(center, player.Position) <= radius {
+			players = append(players, player)
+		}
+	}
+	
+	return players
+}
+
+// GetState returns a copy of the current cell state
+func (c *Cell) GetState() CellState {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	
+	// Create a deep copy of the state
+	stateCopy := *c.state
+	stateCopy.Players = make(map[PlayerID]*PlayerState)
+	
+	for id, player := range c.state.Players {
+		playerCopy := *player
+		stateCopy.Players[id] = &playerCopy
+	}
+	
+	return stateCopy
 }
 
 // GetHealth returns the current health status of the cell
-func (c *CellSimulator) GetHealth() string {
-	return c.health
+func (c *Cell) GetHealth() *HealthStatus {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	
+	uptime := time.Since(c.startTime)
+	
+	health := &HealthStatus{
+		Healthy:        c.state.Ready && c.state.Phase == "Running",
+		LastCheckpoint: c.metrics.LastCheckpoint,
+		PlayerCount:    c.state.PlayerCount,
+		CPUUsage:       c.metrics.CPUUsage,
+		MemoryUsage:    c.metrics.MemoryUsage,
+		Uptime:         uptime,
+		Errors:         make([]string, 0),
+	}
+	
+	return health
 }
 
-// GetStatus returns the current status of the cell
-func (c *CellSimulator) GetStatus() fleetforgev1.CellStatus {
-	c.playersMutex.RLock()
-	defer c.playersMutex.RUnlock()
-
-	lastHeartbeat := metav1.NewTime(c.lastHeartbeat)
-
-	return fleetforgev1.CellStatus{
-		ID:             c.ID,
-		Boundaries:     c.Boundaries,
-		CurrentPlayers: c.currentPlayers,
-		Health:         c.health,
-		LastHeartbeat:  &lastHeartbeat,
-	}
-}
-
-// isPositionWithinBounds checks if a position is within the cell's spatial boundaries
-func (c *CellSimulator) isPositionWithinBounds(position map[string]interface{}) bool {
-	x, hasX := position["x"].(float64)
-	if !hasX {
-		return false
-	}
-
-	if x < c.Boundaries.XMin || x > c.Boundaries.XMax {
-		return false
-	}
-
-	// Check Y bounds if specified
-	if c.Boundaries.YMin != nil && c.Boundaries.YMax != nil {
-		y, hasY := position["y"].(float64)
-		if hasY {
-			if y < *c.Boundaries.YMin || y > *c.Boundaries.YMax {
-				return false
-			}
-		}
-	}
-
-	// Check Z bounds if specified
-	if c.Boundaries.ZMin != nil && c.Boundaries.ZMax != nil {
-		z, hasZ := position["z"].(float64)
-		if hasZ {
-			if z < *c.Boundaries.ZMin || z > *c.Boundaries.ZMax {
-				return false
-			}
-		}
-	}
-
-	return true
-}
-
-// healthCheckLoop runs periodic health checks
-func (c *CellSimulator) healthCheckLoop() {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-c.ctx.Done():
-			return
-		case <-ticker.C:
-			c.performHealthCheck()
-		}
+// GetMetrics returns current performance metrics
+func (c *Cell) GetMetrics() map[string]float64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	
+	return map[string]float64{
+		"player_count":        float64(c.metrics.PlayerCount),
+		"max_players":         float64(c.metrics.MaxPlayers),
+		"cpu_usage":           c.metrics.CPUUsage,
+		"memory_usage":        c.metrics.MemoryUsage,
+		"tick_rate":           c.metrics.TickRate,
+		"tick_duration_ms":    c.metrics.TickDuration,
+		"messages_per_second": c.metrics.MessagesPerSecond,
+		"bytes_per_second":    c.metrics.BytesPerSecond,
+		"state_size_bytes":    float64(c.metrics.StateSize),
+		"uptime_seconds":      time.Since(c.startTime).Seconds(),
 	}
 }
 
-// performHealthCheck evaluates cell health
-func (c *CellSimulator) performHealthCheck() {
-	c.lastHeartbeat = time.Now()
+// Checkpoint creates a serialized checkpoint of the cell state
+func (c *Cell) Checkpoint() ([]byte, error) {
+	state := c.GetState()
+	return json.Marshal(state)
+}
 
-	// Simple health check logic
-	if c.currentPlayers > c.maxPlayers {
-		c.health = "Overloaded"
-	} else if float64(c.currentPlayers)/float64(c.maxPlayers) > 0.9 {
-		c.health = "Near Capacity"
-	} else {
-		c.health = "Healthy"
+// Restore restores the cell state from a checkpoint
+func (c *Cell) Restore(checkpoint []byte) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	
+	var state CellState
+	if err := json.Unmarshal(checkpoint, &state); err != nil {
+		return fmt.Errorf("failed to unmarshal checkpoint: %w", err)
 	}
-
-	c.logger.V(1).Info("Health check completed", "health", c.health, "players", c.currentPlayers)
+	
+	// Restore the state but keep the current runtime information
+	c.state.Players = state.Players
+	c.state.PlayerCount = state.PlayerCount
+	c.state.GameState = state.GameState
+	c.state.Tick = state.Tick
+	c.state.UpdatedAt = time.Now()
+	
+	return nil
 }
 
-// checkpointLoop runs periodic state checkpoints
-func (c *CellSimulator) checkpointLoop() {
-	ticker := time.NewTicker(c.checkpointInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-c.ctx.Done():
-			return
-		case <-ticker.C:
-			c.performCheckpoint()
-		}
-	}
+// isWithinBoundaries checks if a position is within the cell boundaries
+func (c *Cell) isWithinBoundaries(pos WorldPosition) bool {
+	bounds := c.state.Boundaries
+	return pos.X >= bounds.XMin && pos.X <= bounds.XMax &&
+		   pos.Y >= bounds.YMin && pos.Y <= bounds.YMax
 }
 
-// performCheckpoint saves the current cell state
-func (c *CellSimulator) performCheckpoint() {
-	c.playersMutex.RLock()
-	defer c.playersMutex.RUnlock()
-
-	c.lastCheckpoint = time.Now()
-	c.logger.Info("Checkpoint completed", "players", c.currentPlayers, "timestamp", c.lastCheckpoint)
-
-	// In a real implementation, this would persist state to storage
-	// For now, we just log the checkpoint operation
-}
-
-// startMetricsServer starts the metrics HTTP server
-func (c *CellSimulator) startMetricsServer() {
-	// This would typically start a Prometheus metrics server
-	// For now, we'll just log that metrics are available
-	c.logger.Info("Metrics server ready", "port", c.metricsPort)
+// calculateDistance calculates the distance between two positions
+func (c *Cell) calculateDistance(pos1, pos2 WorldPosition) float64 {
+	dx := pos1.X - pos2.X
+	dy := pos1.Y - pos2.Y
+	return math.Sqrt(dx*dx + dy*dy)
 }
