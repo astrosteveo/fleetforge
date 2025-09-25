@@ -526,7 +526,6 @@ func boundsOverlap(bounds1, bounds2 fleetforgev1.WorldBounds) bool {
 func CalculateCellBoundaries(topology fleetforgev1.WorldTopology) []fleetforgev1.WorldBounds {
 	return calculateCellBoundaries(topology)
 }
-}
 
 func calculateCellBoundaries(topology fleetforgev1.WorldTopology) []fleetforgev1.WorldBounds {
 	// Simple implementation: divide world into equal cells
