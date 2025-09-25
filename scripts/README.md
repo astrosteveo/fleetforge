@@ -71,21 +71,53 @@ The script monitors the `fleetforge_players_total` metric exposed at the `/metri
 ### Sample Output
 
 ```
-[2025-09-25 07:02:52] FleetForge Demo Load Script starting
-[2025-09-25 07:02:52] World: world-a, Target Cell: test-cell-1, Action: increase
-[2025-09-25 07:02:52] Checking cell service availability at http://localhost:8080
-[2025-09-25 07:02:52] Cell service is available
-[2025-09-25 07:02:52] Target cell 'test-cell-1' created successfully
-[2025-09-25 07:02:52] Starting load simulation for world 'world-a' on cell 'test-cell-1'
-[2025-09-25 07:02:52] Action: increase, Duration: 60s, Players per ramp: 10, Interval: 5s
-[2025-09-25 07:02:52] Initial player count: 0
-[2025-09-25 07:02:52] Will execute 12 ramp steps
-[2025-09-25 07:02:52] Ramp step 1/12
-[2025-09-25 07:02:52] Added player 'world-a-load-1' at position (566, 610)
-...
-[2025-09-25 07:02:52] Current player count: 10 (change: 10)
-[2025-09-25 07:03:50] SUCCESS: Player count increased as expected
-[2025-09-25 07:03:50] Demo load script completed successfully
+=== FleetForge Demo Load Script Test ===
+Running: ./scripts/demo-load.sh --world demo-world --target-cell demo-cell --ramp 10 --players-per-ramp 5 --ramp-interval 2
+
+[2025-09-25 07:05:29] FleetForge Demo Load Script starting
+[2025-09-25 07:05:29] World: demo-world, Target Cell: demo-cell, Action: increase
+[2025-09-25 07:05:29] Checking cell service availability at http://localhost:8080
+[2025-09-25 07:05:29] Cell service is available
+[2025-09-25 07:05:29] Target cell 'demo-cell' created successfully
+[2025-09-25 07:05:29] Starting load simulation for world 'demo-world' on cell 'demo-cell'
+[2025-09-25 07:05:29] Action: increase, Duration: 10s, Players per ramp: 5, Interval: 2s
+[2025-09-25 07:05:29] Initial player count: 0
+[2025-09-25 07:05:29] Will execute 5 ramp steps
+[2025-09-25 07:05:29] Ramp step 1/5
+[2025-09-25 07:05:29] Added player 'demo-world-load-1' at position (760, 713)
+[2025-09-25 07:05:29] Added player 'demo-world-load-2' at position (82, 72)
+[2025-09-25 07:05:29] Added player 'demo-world-load-3' at position (579, 754)
+[2025-09-25 07:05:29] Added player 'demo-world-load-4' at position (78, 388)
+[2025-09-25 07:05:29] Added player 'demo-world-load-5' at position (603, 75)
+[2025-09-25 07:05:29] Current player count: 5 (change: 5)
+[2025-09-25 07:05:29] Waiting 2s for next ramp step...
+[... additional ramp steps ...]
+[2025-09-25 07:05:40] Final player count: 25 (total change: 25)
+[2025-09-25 07:05:40] SUCCESS: Player count increased as expected
+[2025-09-25 07:05:40] Load simulation completed successfully
+
+=== Final Metrics Check ===
+# HELP fleetforge_players_total Total number of players
+# TYPE fleetforge_players_total gauge
+fleetforge_players_total 25
+```
+
+### Dry Run Output
+
+```bash
+$ ./scripts/demo-load.sh --world demo-world --target-cell demo-cell --ramp 10 --dry-run
+
+[2025-09-25 07:01:52] FleetForge Demo Load Script starting
+[2025-09-25 07:01:52] World: demo-world, Target Cell: demo-cell, Action: increase
+[2025-09-25 07:01:52] DRY RUN MODE - No actual changes will be made
+[2025-09-25 07:01:52] Checking cell service availability at http://localhost:8080
+[2025-09-25 07:01:52] Cell service is available
+[2025-09-25 07:01:52] [DRY RUN] Would create cell 'demo-cell'
+[2025-09-25 07:01:52] Starting load simulation for world 'demo-world' on cell 'demo-cell'
+[2025-09-25 07:01:52] Action: increase, Duration: 10s, Players per ramp: 5, Interval: 2s
+[2025-09-25 07:01:52] [DRY RUN] Would add player 'demo-world-load-1' to cell 'demo-cell' at (385, 794)
+[2025-09-25 07:01:52] [DRY RUN] Would add player 'demo-world-load-2' to cell 'demo-cell' at (638, 586)
+[... additional dry run steps ...]
 ```
 
 ### Integration with Elasticity Demo
