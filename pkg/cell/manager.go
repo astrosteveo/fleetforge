@@ -210,8 +210,13 @@ func (m *DefaultCellManager) Checkpoint(cellID CellID) error {
 		return fmt.Errorf("failed to create checkpoint: %w", err)
 	}
 	
-	// In a real implementation, this would persist the checkpoint to storage
-	// For now, we just validate that we can create it
+	// TODO: Implement persistent storage for checkpoints
+	// Next steps:
+	// 1. Add file-based persistence with proper error handling
+	// 2. Implement checkpoint versioning and rotation
+	// 3. Add cloud storage integration for production environments
+	// 4. Support for incremental/delta checkpoints
+	// For now, we just validate that we can create the checkpoint
 	_ = checkpoint
 	
 	return nil

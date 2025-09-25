@@ -17,11 +17,13 @@ type Cell struct {
 	shutdown   chan struct{}
 	ticker     *time.Ticker
 	startTime  time.Time
+	readyTimer *time.Timer
 	
 	// Configuration
 	tickRate      time.Duration
 	syncRadius    float64
 	checkpointInterval time.Duration
+	gracefulShutdownTimeout time.Duration
 	
 	mu sync.RWMutex
 }
@@ -51,13 +53,14 @@ func NewCell(spec CellSpec) (*Cell, error) {
 			Phase:      "Initializing",
 			Ready:      false,
 		},
-		aoi:                NewBasicAOIFilter(),
-		metrics:            &CellMetrics{},
-		shutdown:           make(chan struct{}),
-		tickRate:          time.Millisecond * 50, // 20 TPS
-		syncRadius:        100.0,                 // Default sync radius
-		checkpointInterval: time.Second * 30,     // Checkpoint every 30 seconds
-		startTime:         time.Now(),
+		aoi:                     NewBasicAOIFilter(),
+		metrics:                 &CellMetrics{},
+		shutdown:                make(chan struct{}),
+		tickRate:               time.Millisecond * 50, // 20 TPS
+		syncRadius:             100.0,                 // Default sync radius
+		checkpointInterval:     time.Second * 30,      // Checkpoint every 30 seconds
+		gracefulShutdownTimeout: time.Second * 5,      // Configurable shutdown timeout
+		startTime:              time.Now(),
 	}
 	
 	return cell, nil
@@ -79,12 +82,15 @@ func (c *Cell) Start(ctx context.Context) error {
 	go c.simulationLoop(ctx)
 	go c.checkpointLoop(ctx)
 	
-	// Mark as ready after a brief initialization
-	time.AfterFunc(time.Millisecond*100, func() {
+	// Mark as ready after a brief initialization, but guard against race conditions
+	c.readyTimer = time.AfterFunc(time.Millisecond*100, func() {
 		c.mu.Lock()
-		c.state.Phase = "Running"
-		c.state.Ready = true
-		c.mu.Unlock()
+		defer c.mu.Unlock()
+		// Only transition to Running if still in Starting phase
+		if c.state.Phase == "Starting" {
+			c.state.Phase = "Running"
+			c.state.Ready = true
+		}
 	})
 	
 	return nil
@@ -102,14 +108,16 @@ func (c *Cell) Stop() error {
 	c.state.Phase = "Stopping"
 	c.state.Ready = false
 	
+	// Cancel the ready timer if it hasn't fired yet
+	if c.readyTimer != nil {
+		c.readyTimer.Stop()
+	}
+	
 	close(c.shutdown)
 	
 	if c.ticker != nil {
 		c.ticker.Stop()
 	}
-	
-	// Give players time to disconnect gracefully
-	time.Sleep(time.Second * 2)
 	
 	c.state.Phase = "Stopped"
 	return nil
@@ -191,10 +199,16 @@ func (c *Cell) checkpointLoop(ctx context.Context) {
 
 // createCheckpoint creates a checkpoint of the current cell state
 func (c *Cell) createCheckpoint() {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	
-	// In a real implementation, this would persist to storage
+	// TODO: Implement persistent storage for checkpoints
+	// Next steps:
+	// 1. Add file-based persistence to local disk
+	// 2. Integrate with cloud storage (S3, GCS, etc.) for production
+	// 3. Add checkpoint versioning and retention policies
+	// 4. Implement delta checkpoints for efficiency
+	
 	// For now, we just update the metrics
 	c.metrics.LastCheckpoint = time.Now()
 	c.metrics.StateSize = int64(len(c.state.Players) * 1024) // Rough estimate

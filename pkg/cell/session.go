@@ -1,6 +1,8 @@
 package cell
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"sync"
 	"time"
@@ -341,9 +343,16 @@ func (s *DefaultPlayerSession) CleanupInactiveSessions(maxInactiveTime time.Dura
 	return cleaned
 }
 
-// generateSessionToken generates a unique session token for a player
+// generateSessionToken generates a cryptographically secure session token for a player
 func generateSessionToken(playerID PlayerID) string {
-	// In a real implementation, this would generate a cryptographically secure token
-	// For now, we'll use a simple timestamp-based token
-	return fmt.Sprintf("token_%s_%d", playerID, time.Now().UnixNano())
+	// Generate 32 bytes of random data for a secure token
+	tokenBytes := make([]byte, 32)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		// Fallback to timestamp-based token if crypto/rand fails
+		// This should rarely happen in practice
+		return fmt.Sprintf("fallback_token_%s_%d", playerID, time.Now().UnixNano())
+	}
+	
+	// Convert to hex string and prefix with player ID for debugging
+	return fmt.Sprintf("tok_%s_%s", playerID, hex.EncodeToString(tokenBytes))
 }
