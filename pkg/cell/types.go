@@ -112,6 +112,13 @@ type CellManager interface {
 	// State management
 	Checkpoint(cellID CellID) error
 	Restore(cellID CellID, checkpoint []byte) error
+
+	// Scaling operations
+	SplitCell(cellID CellID, splitThreshold float64) ([]*Cell, error)
+
+	// Event handling
+	GetEvents() []CellEvent
+	GetEventsSince(since time.Time) []CellEvent
 }
 
 // PlayerSession interface defines player session management
@@ -128,6 +135,29 @@ type PlayerSession interface {
 	UpdatePlayerLocation(playerID PlayerID, position WorldPosition) error
 	GetPlayerLocation(playerID PlayerID) (*WorldPosition, error)
 	GetPlayerCell(playerID PlayerID) (CellID, error)
+}
+
+// CellEventType represents different types of cell events
+type CellEventType string
+
+const (
+	CellEventCreated     CellEventType = "CellCreated"
+	CellEventSplit       CellEventType = "CellSplit"
+	CellEventMerged      CellEventType = "CellMerged"
+	CellEventTerminated  CellEventType = "CellTerminated"
+	CellEventPlayerAdded CellEventType = "PlayerAdded"
+	CellEventPlayerMoved CellEventType = "PlayerMoved"
+)
+
+// CellEvent represents an event that occurred in the cell system
+type CellEvent struct {
+	Type        CellEventType          `json:"type"`
+	CellID      CellID                 `json:"cellId"`
+	ParentID    *CellID                `json:"parentId,omitempty"`
+	ChildrenIDs []CellID               `json:"childrenIds,omitempty"`
+	Timestamp   time.Time              `json:"timestamp"`
+	Duration    *time.Duration         `json:"duration,omitempty"`
+	Metadata    map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // CellMetrics defines metrics exposed by cells
@@ -149,4 +179,11 @@ type CellMetrics struct {
 	// State metrics
 	LastCheckpoint time.Time `json:"lastCheckpoint"`
 	StateSize      int64     `json:"stateSize"`
+
+	// Scaling metrics
+	DensityRatio        float64   `json:"densityRatio"`        // PlayerCount / MaxPlayers
+	ThresholdBreachTime time.Time `json:"thresholdBreachTime"` // When threshold was first breached
+	LastSplitTime       time.Time `json:"lastSplitTime"`       // When cell was last split
+	SplitCount          int       `json:"splitCount"`          // Number of times this cell has split
+	AvgSplitDuration    float64   `json:"avgSplitDuration"`    // Average split duration in milliseconds
 }

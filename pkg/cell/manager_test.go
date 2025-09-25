@@ -1,8 +1,12 @@
 package cell
 
 import (
+	"context"
+	"fmt"
 	"testing"
 	"time"
+
+	v1 "github.com/astrosteveo/fleetforge/api/v1"
 )
 
 func TestCellManager_CreateCell(t *testing.T) {
@@ -459,4 +463,459 @@ func TestCellManager_NonExistentCell(t *testing.T) {
 	if err == nil {
 		t.Error("Expected error when getting metrics of non-existent cell")
 	}
+}
+
+// TestCellManager_SplitCell tests automatic cell splitting functionality
+func TestCellManager_SplitCell(t *testing.T) {
+	manager := NewCellManager()
+	defer manager.(*DefaultCellManager).Shutdown()
+
+	// Create a cell with small capacity for easier testing
+	spec := CellSpec{
+		ID:         "test-split-cell",
+		Boundaries: createTestBounds(),
+		Capacity:   CellCapacity{MaxPlayers: 10}, // Small capacity
+	}
+
+	_, err := manager.CreateCell(spec)
+	if err != nil {
+		t.Fatalf("Failed to create cell: %v", err)
+	}
+
+	// Wait for cell to be ready
+	time.Sleep(200 * time.Millisecond)
+
+	// Add players to exceed the threshold (80% of 10 = 8 players)
+	for i := 1; i <= 9; i++ {
+		player := &PlayerState{
+			ID: PlayerID(fmt.Sprintf("player%d", i)),
+			Position: WorldPosition{
+				X: float64(i * 10), // Spread players across the cell
+				Y: 50,
+			},
+			LastSeen:  time.Now(),
+			Connected: true,
+		}
+
+		err := manager.AddPlayer(spec.ID, player)
+		if err != nil {
+			t.Fatalf("Failed to add player %d: %v", i, err)
+		}
+	}
+
+	// Wait a moment for metrics to update and split to be triggered
+	time.Sleep(100 * time.Millisecond)
+
+	// Check that split occurred
+	events := manager.GetEvents()
+	splitEventFound := false
+	terminationEventFound := false
+
+	for _, event := range events {
+		if event.Type == CellEventSplit && event.CellID == spec.ID {
+			splitEventFound = true
+
+			// Verify split event properties
+			if len(event.ChildrenIDs) == 0 {
+				t.Error("Split event should have children IDs")
+			}
+			if event.Duration == nil {
+				t.Error("Split event should have duration recorded")
+			}
+
+			// Check that children were created
+			for _, childID := range event.ChildrenIDs {
+				_, err := manager.GetCell(childID)
+				if err != nil {
+					t.Errorf("Child cell %s should exist: %v", childID, err)
+				}
+			}
+		}
+
+		if event.Type == CellEventTerminated && event.CellID == spec.ID {
+			terminationEventFound = true
+		}
+	}
+
+	if !splitEventFound {
+		t.Error("Expected CellSplit event to be recorded")
+	}
+
+	if !terminationEventFound {
+		t.Error("Expected CellTerminated event for parent cell")
+	}
+
+	// Verify parent cell was terminated
+	_, err = manager.GetCell(spec.ID)
+	if err == nil {
+		t.Error("Parent cell should have been terminated")
+	}
+}
+
+// TestCellManager_SplitCell_ThresholdNotMet tests that split doesn't occur below threshold
+func TestCellManager_SplitCell_ThresholdNotMet(t *testing.T) {
+	manager := NewCellManager()
+	defer manager.(*DefaultCellManager).Shutdown()
+
+	spec := CellSpec{
+		ID:         "test-no-split-cell",
+		Boundaries: createTestBounds(),
+		Capacity:   CellCapacity{MaxPlayers: 10},
+	}
+
+	_, err := manager.CreateCell(spec)
+	if err != nil {
+		t.Fatalf("Failed to create cell: %v", err)
+	}
+
+	// Wait for cell to be ready
+	time.Sleep(200 * time.Millisecond)
+
+	// Add only a few players (below 80% threshold)
+	for i := 1; i <= 5; i++ {
+		player := &PlayerState{
+			ID: PlayerID(fmt.Sprintf("player%d", i)),
+			Position: WorldPosition{
+				X: float64(i * 10),
+				Y: 50,
+			},
+			LastSeen:  time.Now(),
+			Connected: true,
+		}
+
+		err := manager.AddPlayer(spec.ID, player)
+		if err != nil {
+			t.Fatalf("Failed to add player %d: %v", i, err)
+		}
+	}
+
+	// Wait a moment
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify no split event occurred
+	events := manager.GetEvents()
+	for _, event := range events {
+		if event.Type == CellEventSplit {
+			t.Error("Split should not occur when threshold is not met")
+		}
+	}
+
+	// Verify original cell still exists
+	_, err = manager.GetCell(spec.ID)
+	if err != nil {
+		t.Error("Original cell should still exist when threshold not met")
+	}
+}
+
+// TestCellManager_GetEvents tests event retrieval functionality
+func TestCellManager_GetEvents(t *testing.T) {
+	manager := NewCellManager()
+	defer manager.(*DefaultCellManager).Shutdown()
+
+	// Initially should have no events
+	events := manager.GetEvents()
+	if len(events) != 0 {
+		t.Errorf("Expected 0 events initially, got %d", len(events))
+	}
+
+	// Create a cell which should generate a creation event
+	spec := CellSpec{
+		ID:         "test-events-cell",
+		Boundaries: createTestBounds(),
+		Capacity:   CellCapacity{MaxPlayers: 5},
+	}
+
+	_, err := manager.CreateCell(spec)
+	if err != nil {
+		t.Fatalf("Failed to create cell: %v", err)
+	}
+
+	// Should now have one creation event
+	events = manager.GetEvents()
+	if len(events) != 1 {
+		t.Errorf("Expected 1 event after cell creation, got %d", len(events))
+	}
+
+	if events[0].Type != CellEventCreated {
+		t.Errorf("Expected CellCreated event, got %s", events[0].Type)
+	}
+}
+
+// TestCellManager_GetEventsSince tests time-filtered event retrieval
+func TestCellManager_GetEventsSince(t *testing.T) {
+	manager := NewCellManager()
+	defer manager.(*DefaultCellManager).Shutdown()
+
+	// Record start time
+	startTime := time.Now()
+
+	// Create a cell
+	spec := CellSpec{
+		ID:         "test-events-since-cell",
+		Boundaries: createTestBounds(),
+		Capacity:   CellCapacity{MaxPlayers: 5},
+	}
+
+	_, err := manager.CreateCell(spec)
+	if err != nil {
+		t.Fatalf("Failed to create cell: %v", err)
+	}
+
+	// Get events since start time - should include the creation event
+	events := manager.GetEventsSince(startTime)
+	if len(events) != 1 {
+		t.Errorf("Expected 1 event since start time, got %d", len(events))
+	}
+
+	// Get events since after creation - should be empty
+	futureTime := time.Now().Add(time.Second)
+	events = manager.GetEventsSince(futureTime)
+	if len(events) != 0 {
+		t.Errorf("Expected 0 events since future time, got %d", len(events))
+	}
+}
+
+// TestCell_ThresholdMonitoring tests cell threshold monitoring and density calculation
+func TestCell_ThresholdMonitoring(t *testing.T) {
+	spec := CellSpec{
+		ID:         "test-threshold-cell",
+		Boundaries: createTestBounds(),
+		Capacity:   CellCapacity{MaxPlayers: 10},
+	}
+
+	cell, err := NewCell(spec)
+	if err != nil {
+		t.Fatalf("Failed to create cell: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := cell.Start(ctx); err != nil {
+		t.Fatalf("Failed to start cell: %v", err)
+	}
+	defer cell.Stop()
+
+	// Wait for cell to be ready
+	time.Sleep(200 * time.Millisecond)
+
+	// Initially should not breach threshold
+	if cell.IsThresholdBreached() {
+		t.Error("Threshold should not be breached initially")
+	}
+
+	densityRatio := cell.GetDensityRatio()
+	if densityRatio != 0.0 {
+		t.Errorf("Expected density ratio 0.0, got %f", densityRatio)
+	}
+
+	// Add players to exceed threshold
+	for i := 1; i <= 8; i++ { // 8/10 = 0.8 = 80% threshold
+		player := &PlayerState{
+			ID: PlayerID(fmt.Sprintf("player%d", i)),
+			Position: WorldPosition{
+				X: float64(i * 10),
+				Y: 50,
+			},
+			LastSeen:  time.Now(),
+			Connected: true,
+		}
+
+		err := cell.AddPlayer(player)
+		if err != nil {
+			t.Fatalf("Failed to add player %d: %v", i, err)
+		}
+	}
+
+	// Wait for a tick to update metrics
+	time.Sleep(100 * time.Millisecond)
+
+	// Should now breach threshold
+	if !cell.IsThresholdBreached() {
+		t.Error("Threshold should be breached after adding 8 players")
+	}
+
+	densityRatio = cell.GetDensityRatio()
+	expectedRatio := 8.0 / 10.0
+	if densityRatio != expectedRatio {
+		t.Errorf("Expected density ratio %f, got %f", expectedRatio, densityRatio)
+	}
+}
+
+// TestCellSplitBoundarySubdivision tests that child cells properly partition parent space
+func TestCellSplitBoundarySubdivision(t *testing.T) {
+	manager := NewCellManager().(*DefaultCellManager)
+	defer manager.Shutdown()
+
+	// Test boundary subdivision
+	parentBounds := v1.WorldBounds{
+		XMin: 0,
+		XMax: 100,
+		YMin: &[]float64{0}[0],
+		YMax: &[]float64{100}[0],
+	}
+
+	childBounds := manager.subdivideBoundaries(parentBounds)
+
+	// Should create exactly 2 children
+	if len(childBounds) != 2 {
+		t.Errorf("Expected 2 child boundaries, got %d", len(childBounds))
+	}
+
+	// Check that child boundaries partition the parent space
+	child1 := childBounds[0]
+	child2 := childBounds[1]
+
+	// Child 1 should be left half
+	if child1.XMin != 0 || child1.XMax != 50 {
+		t.Errorf("Child 1 X boundaries incorrect: XMin=%f, XMax=%f", child1.XMin, child1.XMax)
+	}
+
+	// Child 2 should be right half
+	if child2.XMin != 50 || child2.XMax != 100 {
+		t.Errorf("Child 2 X boundaries incorrect: XMin=%f, XMax=%f", child2.XMin, child2.XMax)
+	}
+
+	// Y boundaries should be preserved
+	if child1.YMin == nil || *child1.YMin != 0 || child1.YMax == nil || *child1.YMax != 100 {
+		t.Error("Child 1 Y boundaries should match parent")
+	}
+	if child2.YMin == nil || *child2.YMin != 0 || child2.YMax == nil || *child2.YMax != 100 {
+		t.Error("Child 2 Y boundaries should match parent")
+	}
+
+	// Check area conservation (child areas should sum to parent area)
+	parentArea := (parentBounds.XMax - parentBounds.XMin) * (*parentBounds.YMax - *parentBounds.YMin)
+	child1Area := (child1.XMax - child1.XMin) * (*child1.YMax - *child1.YMin)
+	child2Area := (child2.XMax - child2.XMin) * (*child2.YMax - *child2.YMin)
+	totalChildArea := child1Area + child2Area
+
+	if totalChildArea != parentArea {
+		t.Errorf("Area not conserved: parent=%f, children=%f", parentArea, totalChildArea)
+	}
+}
+
+// TestCellSplitAcceptanceCriteria tests the specific acceptance criteria from PRD 10.4
+func TestCellSplitAcceptanceCriteria(t *testing.T) {
+	manager := NewCellManager()
+	defer manager.(*DefaultCellManager).Shutdown()
+
+	// Create parent cell
+	spec := CellSpec{
+		ID:         "parent-cell",
+		Boundaries: createTestBounds(),
+		Capacity:   CellCapacity{MaxPlayers: 5}, // Small for easier testing
+	}
+
+	_, err := manager.CreateCell(spec)
+	if err != nil {
+		t.Fatalf("Failed to create parent cell: %v", err)
+	}
+
+	// Wait for cell to be ready
+	time.Sleep(200 * time.Millisecond)
+
+	cellCountBeforeSplit := len(manager.(*DefaultCellManager).cells)
+	t.Logf("Cell count before split: %d", cellCountBeforeSplit)
+
+	// Add players to trigger split (5 players = 100% of capacity, exceeds 80% threshold)
+	for i := 1; i <= 5; i++ {
+		player := &PlayerState{
+			ID: PlayerID(fmt.Sprintf("test-player-%d", i)),
+			Position: WorldPosition{
+				X: float64(i * 10),
+				Y: 50,
+			},
+			LastSeen:  time.Now(),
+			Connected: true,
+		}
+
+		err := manager.AddPlayer(spec.ID, player)
+		if err != nil {
+			t.Fatalf("Failed to add player %d: %v", i, err)
+		}
+	}
+
+	// Wait for split to occur
+	time.Sleep(300 * time.Millisecond)
+
+	// Acceptance Criteria Check 1: Pre-split cell count M; post-split M+1 or M+2
+	cellCountAfterSplit := len(manager.(*DefaultCellManager).cells)
+	t.Logf("Cell count after split: %d", cellCountAfterSplit)
+
+	if cellCountAfterSplit != cellCountBeforeSplit+1 && cellCountAfterSplit != cellCountBeforeSplit+2 {
+		t.Errorf("Cell count should increase by 1 or 2 after split. Before: %d, After: %d",
+			cellCountBeforeSplit, cellCountAfterSplit)
+	}
+
+	// Acceptance Criteria Check 2: Event: CellSplit with parent and children IDs
+	events := manager.GetEvents()
+	var splitEvent *CellEvent
+	for i := range events {
+		if events[i].Type == CellEventSplit && events[i].CellID == spec.ID {
+			splitEvent = &events[i]
+			break
+		}
+	}
+
+	if splitEvent == nil {
+		t.Fatal("Expected CellSplit event to be recorded")
+	}
+
+	if len(splitEvent.ChildrenIDs) == 0 {
+		t.Error("CellSplit event should have children IDs")
+	}
+
+	t.Logf("Split event found: Parent=%s, Children=%v", splitEvent.CellID, splitEvent.ChildrenIDs)
+
+	// Acceptance Criteria Check 3: Parent cell terminated or marked inactive
+	_, err = manager.GetCell(spec.ID)
+	if err == nil {
+		t.Error("Parent cell should be terminated after split")
+	}
+
+	// Verify parent termination event exists
+	var terminationEvent *CellEvent
+	for i := range events {
+		if events[i].Type == CellEventTerminated && events[i].CellID == spec.ID {
+			terminationEvent = &events[i]
+			break
+		}
+	}
+
+	if terminationEvent == nil {
+		t.Error("Expected CellTerminated event for parent cell")
+	}
+
+	// Acceptance Criteria Check 4: Split duration metric recorded
+	if splitEvent.Duration == nil {
+		t.Error("Split event should have duration recorded")
+	} else {
+		t.Logf("Split duration: %v", *splitEvent.Duration)
+
+		// Duration should be reasonable (not zero and not too long)
+		if *splitEvent.Duration <= 0 {
+			t.Error("Split duration should be positive")
+		}
+		if *splitEvent.Duration > time.Second {
+			t.Error("Split duration seems too long for test scenario")
+		}
+	}
+
+	// Additional verification: Child cells should exist and be functional
+	for _, childID := range splitEvent.ChildrenIDs {
+		childCell, err := manager.GetCell(childID)
+		if err != nil {
+			t.Errorf("Child cell %s should exist: %v", childID, err)
+			continue
+		}
+
+		// Child cell should be healthy
+		health := childCell.GetHealth()
+		if !health.Healthy {
+			t.Errorf("Child cell %s should be healthy", childID)
+		}
+	}
+
+	t.Log("All acceptance criteria verified successfully!")
 }

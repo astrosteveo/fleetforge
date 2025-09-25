@@ -25,6 +25,11 @@ type Cell struct {
 	checkpointInterval      time.Duration
 	gracefulShutdownTimeout time.Duration
 
+	// Threshold monitoring
+	splitThreshold    float64
+	thresholdBreached bool
+	onSplitNeeded     func(cellID CellID, densityRatio float64)
+
 	mu sync.RWMutex
 }
 
@@ -61,6 +66,9 @@ func NewCell(spec CellSpec) (*Cell, error) {
 		checkpointInterval:      time.Second * 30,      // Checkpoint every 30 seconds
 		gracefulShutdownTimeout: time.Second * 5,       // Configurable shutdown timeout
 		startTime:               time.Now(),
+		splitThreshold:          0.8, // Default 80% capacity
+		thresholdBreached:       false,
+		onSplitNeeded:           nil, // Will be set by manager
 	}
 
 	return cell, nil
@@ -173,11 +181,35 @@ func (c *Cell) updatePlayerStates() {
 	}
 }
 
-// updateMetrics updates cell performance metrics
+// updateMetrics updates cell performance metrics and checks for split threshold
 func (c *Cell) updateMetrics() {
 	c.metrics.PlayerCount = c.state.PlayerCount
 	c.metrics.MaxPlayers = c.state.Capacity.MaxPlayers
 	c.metrics.LastCheckpoint = c.state.UpdatedAt
+
+	// Calculate density ratio
+	if c.metrics.MaxPlayers > 0 {
+		c.metrics.DensityRatio = float64(c.metrics.PlayerCount) / float64(c.metrics.MaxPlayers)
+	} else {
+		c.metrics.DensityRatio = 0.0
+	}
+
+	// Check for threshold breach
+	if c.metrics.DensityRatio >= c.splitThreshold {
+		if !c.thresholdBreached {
+			// First time breaching threshold
+			c.thresholdBreached = true
+			c.metrics.ThresholdBreachTime = time.Now()
+
+			// Notify manager that split is needed
+			if c.onSplitNeeded != nil {
+				go c.onSplitNeeded(c.state.ID, c.metrics.DensityRatio)
+			}
+		}
+	} else {
+		// Reset threshold breach flag if density drops below threshold
+		c.thresholdBreached = false
+	}
 }
 
 // checkpointLoop periodically checkpoints the cell state
@@ -276,6 +308,14 @@ func (c *Cell) UpdatePlayerPosition(playerID PlayerID, position WorldPosition) e
 	player.Connected = true
 
 	return nil
+}
+
+// GetPlayer retrieves a player's state by ID
+func (c *Cell) GetPlayer(playerID PlayerID) *PlayerState {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	return c.state.Players[playerID]
 }
 
 // GetPlayersInArea returns players within a specific area
@@ -401,4 +441,32 @@ func (c *Cell) calculateDistance(pos1, pos2 WorldPosition) float64 {
 	dx := pos1.X - pos2.X
 	dy := pos1.Y - pos2.Y
 	return math.Sqrt(dx*dx + dy*dy)
+}
+
+// SetSplitThreshold sets the density threshold for triggering cell splits
+func (c *Cell) SetSplitThreshold(threshold float64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.splitThreshold = threshold
+}
+
+// SetOnSplitNeeded sets the callback function called when a split is needed
+func (c *Cell) SetOnSplitNeeded(callback func(cellID CellID, densityRatio float64)) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.onSplitNeeded = callback
+}
+
+// GetDensityRatio returns the current player density ratio
+func (c *Cell) GetDensityRatio() float64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.metrics.DensityRatio
+}
+
+// IsThresholdBreached returns whether the split threshold is currently breached
+func (c *Cell) IsThresholdBreached() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.thresholdBreached
 }

@@ -4,15 +4,22 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
+
+	v1 "github.com/astrosteveo/fleetforge/api/v1"
 )
 
 // DefaultCellManager implements the CellManager interface
 type DefaultCellManager struct {
 	cells    map[CellID]*Cell
 	sessions map[PlayerID]*PlayerSessionInfo
+	events   []CellEvent
 	mu       sync.RWMutex
 	ctx      context.Context
 	cancel   context.CancelFunc
+
+	// Split configuration
+	defaultSplitThreshold float64
 }
 
 // PlayerSessionInfo tracks player session information
@@ -27,10 +34,12 @@ func NewCellManager() CellManager {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &DefaultCellManager{
-		cells:    make(map[CellID]*Cell),
-		sessions: make(map[PlayerID]*PlayerSessionInfo),
-		ctx:      ctx,
-		cancel:   cancel,
+		cells:                 make(map[CellID]*Cell),
+		sessions:              make(map[PlayerID]*PlayerSessionInfo),
+		events:                make([]CellEvent, 0),
+		ctx:                   ctx,
+		cancel:                cancel,
+		defaultSplitThreshold: 0.8, // 80% capacity threshold by default
 	}
 }
 
@@ -48,11 +57,27 @@ func (m *DefaultCellManager) CreateCell(spec CellSpec) (*Cell, error) {
 		return nil, fmt.Errorf("failed to create cell: %w", err)
 	}
 
+	// Configure split threshold and callback
+	cell.SetSplitThreshold(m.defaultSplitThreshold)
+	cell.SetOnSplitNeeded(m.handleSplitNeeded)
+
 	if err := cell.Start(m.ctx); err != nil {
 		return nil, fmt.Errorf("failed to start cell: %w", err)
 	}
 
 	m.cells[spec.ID] = cell
+
+	// Record cell creation event
+	event := CellEvent{
+		Type:      CellEventCreated,
+		CellID:    spec.ID,
+		Timestamp: time.Now(),
+		Metadata: map[string]interface{}{
+			"boundaries": spec.Boundaries,
+			"capacity":   spec.Capacity,
+		},
+	}
+	m.events = append(m.events, event)
 
 	return cell, nil
 }
@@ -374,4 +399,257 @@ func (m *DefaultCellManager) GetPerCellStats() map[CellID]map[string]float64 {
 	}
 
 	return stats
+}
+
+// handleSplitNeeded is called when a cell needs to be split
+func (m *DefaultCellManager) handleSplitNeeded(cellID CellID, densityRatio float64) {
+	// This will be called in a goroutine, so we need to be careful with locking
+	_, err := m.SplitCell(cellID, densityRatio)
+	if err != nil {
+		// Log error but don't fail the calling goroutine
+		// In a real implementation, we'd use proper logging
+		fmt.Printf("Failed to split cell %s: %v\n", cellID, err)
+	}
+}
+
+// SplitCell splits a cell when it exceeds the threshold
+func (m *DefaultCellManager) SplitCell(cellID CellID, splitThreshold float64) ([]*Cell, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	parentCell, exists := m.cells[cellID]
+	if !exists {
+		return nil, fmt.Errorf("cell %s not found", cellID)
+	}
+
+	parentState := parentCell.GetState()
+
+	// Check if split is really needed
+	if float64(parentState.PlayerCount)/float64(parentState.Capacity.MaxPlayers) < splitThreshold {
+		return nil, fmt.Errorf("cell %s does not meet split threshold", cellID)
+	}
+
+	splitStart := time.Now()
+
+	// Create two child cells by subdividing the parent boundaries
+	childBoundaries := m.subdivideBoundaries(parentState.Boundaries)
+
+	childCells := make([]*Cell, 0, len(childBoundaries))
+	childIDs := make([]CellID, 0, len(childBoundaries))
+
+	// Create child cells
+	for i, bounds := range childBoundaries {
+		childID := CellID(fmt.Sprintf("%s-child-%d", cellID, i+1))
+		childIDs = append(childIDs, childID)
+
+		childSpec := CellSpec{
+			ID:         childID,
+			Boundaries: bounds,
+			Capacity:   parentState.Capacity, // Same capacity as parent
+		}
+
+		childCell, err := NewCell(childSpec)
+		if err != nil {
+			// Clean up any created cells on error
+			for _, cell := range childCells {
+				cell.Stop()
+			}
+			return nil, fmt.Errorf("failed to create child cell %s: %w", childID, err)
+		}
+
+		// Configure child cell
+		childCell.SetSplitThreshold(m.defaultSplitThreshold)
+		childCell.SetOnSplitNeeded(m.handleSplitNeeded)
+
+		if err := childCell.Start(m.ctx); err != nil {
+			// Clean up on error
+			for _, cell := range childCells {
+				cell.Stop()
+			}
+			return nil, fmt.Errorf("failed to start child cell %s: %w", childID, err)
+		}
+
+		m.cells[childID] = childCell
+		childCells = append(childCells, childCell)
+	}
+
+	// Redistribute players to child cells based on position
+	redistributedPlayers := 0
+	for _, player := range parentState.Players {
+		targetChildID := m.findTargetCell(player.Position, childCells)
+		if targetChildID != "" {
+			if err := m.reassignPlayer(player.ID, cellID, targetChildID); err == nil {
+				redistributedPlayers++
+			}
+		}
+	}
+
+	// Mark parent cell as terminated
+	parentCell.Stop()
+	delete(m.cells, cellID)
+
+	splitDuration := time.Since(splitStart)
+
+	// Record split event
+	event := CellEvent{
+		Type:        CellEventSplit,
+		CellID:      cellID,
+		ChildrenIDs: childIDs,
+		Timestamp:   time.Now(),
+		Duration:    &splitDuration,
+		Metadata: map[string]interface{}{
+			"threshold":             splitThreshold,
+			"parent_player_count":   parentState.PlayerCount,
+			"redistributed_players": redistributedPlayers,
+			"child_count":           len(childCells),
+		},
+	}
+	m.events = append(m.events, event)
+
+	// Record termination event for parent
+	terminationEvent := CellEvent{
+		Type:      CellEventTerminated,
+		CellID:    cellID,
+		Timestamp: time.Now(),
+		Metadata: map[string]interface{}{
+			"reason": "split",
+		},
+	}
+	m.events = append(m.events, terminationEvent)
+
+	// Update metrics for child cells
+	for _, childCell := range childCells {
+		childCell.metrics.LastSplitTime = time.Now()
+		childCell.metrics.SplitCount = parentCell.metrics.SplitCount + 1
+
+		// Update average split duration
+		if childCell.metrics.SplitCount > 0 {
+			childCell.metrics.AvgSplitDuration =
+				(childCell.metrics.AvgSplitDuration*float64(childCell.metrics.SplitCount-1) +
+					splitDuration.Seconds()*1000) / float64(childCell.metrics.SplitCount)
+		} else {
+			childCell.metrics.AvgSplitDuration = splitDuration.Seconds() * 1000
+		}
+	}
+
+	return childCells, nil
+}
+
+// subdivideBoundaries splits a boundary into two child boundaries
+func (m *DefaultCellManager) subdivideBoundaries(parentBounds v1.WorldBounds) []v1.WorldBounds {
+	// Simple bisection along the X-axis for now
+	midX := (parentBounds.XMin + parentBounds.XMax) / 2
+
+	child1 := v1.WorldBounds{
+		XMin: parentBounds.XMin,
+		XMax: midX,
+		YMin: parentBounds.YMin,
+		YMax: parentBounds.YMax,
+		ZMin: parentBounds.ZMin,
+		ZMax: parentBounds.ZMax,
+	}
+
+	child2 := v1.WorldBounds{
+		XMin: midX,
+		XMax: parentBounds.XMax,
+		YMin: parentBounds.YMin,
+		YMax: parentBounds.YMax,
+		ZMin: parentBounds.ZMin,
+		ZMax: parentBounds.ZMax,
+	}
+
+	return []v1.WorldBounds{child1, child2}
+}
+
+// findTargetCell finds which child cell a player should be assigned to based on position
+func (m *DefaultCellManager) findTargetCell(pos WorldPosition, childCells []*Cell) CellID {
+	for _, cell := range childCells {
+		bounds := cell.GetState().Boundaries
+
+		// Check if position is within bounds
+		if pos.X >= bounds.XMin && pos.X <= bounds.XMax {
+			withinY := true
+			if bounds.YMin != nil && pos.Y < *bounds.YMin {
+				withinY = false
+			}
+			if bounds.YMax != nil && pos.Y > *bounds.YMax {
+				withinY = false
+			}
+
+			if withinY {
+				return cell.GetState().ID
+			}
+		}
+	}
+
+	// Default to first child if no exact match
+	if len(childCells) > 0 {
+		return childCells[0].GetState().ID
+	}
+
+	return ""
+}
+
+// reassignPlayer moves a player from one cell to another
+func (m *DefaultCellManager) reassignPlayer(playerID PlayerID, fromCellID, toCellID CellID) error {
+	fromCell, exists := m.cells[fromCellID]
+	if !exists {
+		return fmt.Errorf("source cell %s not found", fromCellID)
+	}
+
+	toCell, exists := m.cells[toCellID]
+	if !exists {
+		return fmt.Errorf("target cell %s not found", toCellID)
+	}
+
+	// Get player state from source cell
+	player := fromCell.GetPlayer(playerID)
+	if player == nil {
+		return fmt.Errorf("player %s not found in source cell %s", playerID, fromCellID)
+	}
+
+	// Add to target cell
+	if err := toCell.AddPlayer(player); err != nil {
+		return fmt.Errorf("failed to add player to target cell: %w", err)
+	}
+
+	// Remove from source cell
+	if err := fromCell.RemovePlayer(playerID); err != nil {
+		// Try to roll back the add operation
+		toCell.RemovePlayer(playerID)
+		return fmt.Errorf("failed to remove player from source cell: %w", err)
+	}
+
+	// Update session tracking
+	if session, exists := m.sessions[playerID]; exists {
+		session.CellID = toCellID
+	}
+
+	return nil
+}
+
+// GetEvents returns all recorded events
+func (m *DefaultCellManager) GetEvents() []CellEvent {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	// Return a copy to prevent external modification
+	eventsCopy := make([]CellEvent, len(m.events))
+	copy(eventsCopy, m.events)
+	return eventsCopy
+}
+
+// GetEventsSince returns events recorded since the specified time
+func (m *DefaultCellManager) GetEventsSince(since time.Time) []CellEvent {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var filteredEvents []CellEvent
+	for _, event := range m.events {
+		if event.Timestamp.After(since) {
+			filteredEvents = append(filteredEvents, event)
+		}
+	}
+
+	return filteredEvents
 }
