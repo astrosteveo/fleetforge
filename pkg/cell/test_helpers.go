@@ -1,7 +1,7 @@
 package cell
 
 import (
-	"github.com/astrosteveo/fleetforge/api/v1"
+	v1 "github.com/astrosteveo/fleetforge/api/v1"
 )
 
 // Helper function to create standard world bounds for testing

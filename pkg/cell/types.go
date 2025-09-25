@@ -3,7 +3,7 @@ package cell
 import (
 	"time"
 
-	"github.com/astrosteveo/fleetforge/api/v1"
+	v1 "github.com/astrosteveo/fleetforge/api/v1"
 )
 
 // PlayerID represents a unique player identifier
