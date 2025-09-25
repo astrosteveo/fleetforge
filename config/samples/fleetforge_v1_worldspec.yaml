@@ -1,0 +1,51 @@
+apiVersion: fleetforge.io/v1
+kind: WorldSpec
+metadata:
+  labels:
+    app.kubernetes.io/name: worldspec
+    app.kubernetes.io/instance: worldspec-sample
+    app.kubernetes.io/part-of: fleetforge
+  name: worldspec-sample
+spec:
+  # Topology defines the spatial layout and cell configuration
+  topology:
+    initialCells: 2
+    maxCellsPerCluster: 50
+    worldBoundaries:
+      xMin: -1000.0
+      xMax: 1000.0
+      yMin: -1000.0
+      yMax: 1000.0
+    cellSize:
+      xMin: 0.0
+      xMax: 500.0
+      yMin: 0.0 
+      yMax: 500.0
+
+  # Capacity defines resource and player limits
+  capacity:
+    maxPlayersPerCell: 100
+    cpuLimitPerCell: "1000m"
+    memoryLimitPerCell: "2Gi"
+    cpuRequestPerCell: "500m"
+    memoryRequestPerCell: "1Gi"
+
+  # Scaling defines autoscaling behavior
+  scaling:
+    scaleUpThreshold: 0.8
+    scaleDownThreshold: 0.3
+    predictiveEnabled: true
+    minCells: 1
+    maxCells: 100
+
+  # Persistence defines data persistence configuration
+  persistence:
+    checkpointInterval: "5m"
+    retentionPeriod: "7d"
+    enabled: true
+
+  # Container image for cell game servers
+  gameServerImage: "fleetforge-cell:latest"
+  
+  # Enable cross-cluster cell placement
+  multiClusterEnabled: false
