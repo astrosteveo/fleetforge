@@ -140,6 +140,10 @@ func TestCellStatus_Ready(t *testing.T) {
 		t.Errorf("Expected Health 'Healthy', got %s", cellStatus.Health)
 	}
 
+	if cellStatus.ID != "cell-1" {
+		t.Errorf("Expected ID 'cell-1', got %s", cellStatus.ID)
+	}
+
 	if cellStatus.CurrentPlayers != 50 {
 		t.Errorf("Expected CurrentPlayers 50, got %d", cellStatus.CurrentPlayers)
 	}
@@ -163,5 +167,9 @@ func TestWorldSpecStatus_TotalPlayers(t *testing.T) {
 
 	if len(status.Cells) != 3 {
 		t.Errorf("Expected 3 cells, got %d", len(status.Cells))
+	}
+
+	if status.Phase != "Running" {
+		t.Errorf("Expected Phase 'Running', got %s", status.Phase)
 	}
 }

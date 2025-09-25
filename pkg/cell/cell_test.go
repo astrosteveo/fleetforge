@@ -129,7 +129,7 @@ func TestCell_AddPlayer(t *testing.T) {
 		t.Error("Player not found in cell state")
 	}
 
-	cell.Stop()
+	_ = cell.Stop()
 }
 
 func TestCell_AddPlayer_OutOfBounds(t *testing.T) {
@@ -164,7 +164,7 @@ func TestCell_AddPlayer_OutOfBounds(t *testing.T) {
 		t.Error("Expected error for player outside boundaries")
 	}
 
-	cell.Stop()
+	_ = cell.Stop()
 }
 
 func TestCell_AddPlayer_AtCapacity(t *testing.T) {
@@ -212,7 +212,7 @@ func TestCell_AddPlayer_AtCapacity(t *testing.T) {
 		t.Error("Expected error when adding player beyond capacity")
 	}
 
-	cell.Stop()
+	_ = cell.Stop()
 }
 
 func TestCell_RemovePlayer(t *testing.T) {
@@ -261,7 +261,7 @@ func TestCell_RemovePlayer(t *testing.T) {
 		t.Error("Player still exists in cell state after removal")
 	}
 
-	cell.Stop()
+	_ = cell.Stop()
 }
 
 func TestCell_UpdatePlayerPosition(t *testing.T) {
@@ -308,7 +308,7 @@ func TestCell_UpdatePlayerPosition(t *testing.T) {
 		t.Errorf("Expected position %v, got %v", newPosition, updatedPlayer.Position)
 	}
 
-	cell.Stop()
+	_ = cell.Stop()
 }
 
 func TestCell_GetPlayersInArea(t *testing.T) {
@@ -355,7 +355,7 @@ func TestCell_GetPlayersInArea(t *testing.T) {
 		t.Errorf("Expected 2 players in area, got %d", len(playersInArea))
 	}
 
-	cell.Stop()
+	_ = cell.Stop()
 }
 
 func TestCell_Health(t *testing.T) {
@@ -392,7 +392,7 @@ func TestCell_Health(t *testing.T) {
 		t.Error("Expected positive uptime")
 	}
 
-	cell.Stop()
+	_ = cell.Stop()
 }
 
 func TestCell_Metrics(t *testing.T) {
@@ -430,7 +430,7 @@ func TestCell_Metrics(t *testing.T) {
 		}
 	}
 
-	cell.Stop()
+	_ = cell.Stop()
 }
 
 func TestCell_CheckpointRestore(t *testing.T) {
@@ -500,5 +500,5 @@ func TestCell_CheckpointRestore(t *testing.T) {
 		t.Error("Player not found after restore")
 	}
 
-	cell.Stop()
+	_ = cell.Stop()
 }

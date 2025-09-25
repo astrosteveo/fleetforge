@@ -130,7 +130,7 @@ func (s *CellService) handleCells(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleListCells returns all cells
-func (s *CellService) handleListCells(w http.ResponseWriter, r *http.Request) {
+func (s *CellService) handleListCells(w http.ResponseWriter, _ *http.Request) {
 	if defaultManager, ok := s.manager.(*cell.DefaultCellManager); ok {
 		cellIDs := defaultManager.ListCells()
 
@@ -237,7 +237,7 @@ func (s *CellService) handleCellDetails(w http.ResponseWriter, r *http.Request) 
 }
 
 // handleGetCell returns details for a specific cell
-func (s *CellService) handleGetCell(w http.ResponseWriter, r *http.Request, cellID cell.CellID) {
+func (s *CellService) handleGetCell(w http.ResponseWriter, _ *http.Request, cellID cell.CellID) {
 	cellInstance, err := s.manager.GetCell(cellID)
 	if err != nil {
 		http.Error(w, "Cell not found", http.StatusNotFound)
@@ -270,7 +270,7 @@ func (s *CellService) handleGetCell(w http.ResponseWriter, r *http.Request, cell
 }
 
 // handleDeleteCell deletes a specific cell
-func (s *CellService) handleDeleteCell(w http.ResponseWriter, r *http.Request, cellID cell.CellID) {
+func (s *CellService) handleDeleteCell(w http.ResponseWriter, _ *http.Request, cellID cell.CellID) {
 	err := s.manager.DeleteCell(cellID)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to delete cell: %v", err), http.StatusBadRequest)

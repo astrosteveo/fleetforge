@@ -93,6 +93,8 @@ func (s *DefaultPlayerSession) DestroySession(playerID PlayerID) error {
 		if err != nil {
 			// Log the error but don't fail the session destruction
 			// This can happen if the cell was already deleted
+			// In production, this should be logged properly
+			_ = err // Explicit acknowledgment that we're ignoring the error
 		}
 	}
 
@@ -150,6 +152,7 @@ func (s *DefaultPlayerSession) AssignToCell(playerID PlayerID, cellID CellID) er
 		if addErr := s.cellManager.AddPlayer(session.CellID, originalPlayerState); addErr != nil {
 			// Log the secondary error but return the original
 			// In production, this should be logged properly
+			_ = addErr // Explicit acknowledgment that we're ignoring the error
 		}
 		return fmt.Errorf("failed to add player to new cell: %w", err)
 	}
@@ -210,6 +213,7 @@ func (s *DefaultPlayerSession) HandoffPlayer(playerID PlayerID, sourceCellID, ta
 		if removeErr := s.cellManager.RemovePlayer(targetCellID, playerID); removeErr != nil {
 			// Log the secondary error but return the original
 			// In production, this should be logged properly
+			_ = removeErr // Explicit acknowledgment that we're ignoring the error
 		}
 		return fmt.Errorf("failed to remove player from source cell: %w", err)
 	}

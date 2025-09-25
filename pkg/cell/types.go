@@ -3,7 +3,7 @@ package cell
 import (
 	"time"
 
-	"github.com/astrosteveo/fleetforge/api/v1"
+	v1 "github.com/astrosteveo/fleetforge/api/v1"
 )
 
 // Cell phase constants
@@ -17,11 +17,11 @@ const (
 
 // Cell health status constants
 const (
-	CellHealthHealthy     = "Healthy"
-	CellHealthUnhealthy   = "Unhealthy"
-	CellHealthOverloaded  = "Overloaded"
+	CellHealthHealthy      = "Healthy"
+	CellHealthUnhealthy    = "Unhealthy"
+	CellHealthOverloaded   = "Overloaded"
 	CellHealthNearCapacity = "Near Capacity"
-	CellHealthNotReady    = "NotReady"
+	CellHealthNotReady     = "NotReady"
 )
 
 // PlayerID represents a unique player identifier

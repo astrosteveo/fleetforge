@@ -1,8 +1,6 @@
 package cell
 
-import (
-	"github.com/astrosteveo/fleetforge/api/v1"
-)
+import v1 "github.com/astrosteveo/fleetforge/api/v1"
 
 // Helper function to create standard world bounds for testing
 func createTestBounds() v1.WorldBounds {

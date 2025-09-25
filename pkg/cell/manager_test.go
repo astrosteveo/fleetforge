@@ -7,7 +7,7 @@ import (
 
 func TestCellManager_CreateCell(t *testing.T) {
 	manager := NewCellManager()
-	defer manager.(*DefaultCellManager).Shutdown()
+	defer func() { _ = manager.(*DefaultCellManager).Shutdown() }()
 
 	spec := CellSpec{
 		ID:         "test-cell-1",
@@ -40,7 +40,7 @@ func TestCellManager_CreateCell(t *testing.T) {
 
 func TestCellManager_CreateCell_Duplicate(t *testing.T) {
 	manager := NewCellManager()
-	defer manager.(*DefaultCellManager).Shutdown()
+	defer func() { _ = manager.(*DefaultCellManager).Shutdown() }()
 
 	spec := CellSpec{
 		ID:         "test-cell-1",
@@ -63,7 +63,7 @@ func TestCellManager_CreateCell_Duplicate(t *testing.T) {
 
 func TestCellManager_DeleteCell(t *testing.T) {
 	manager := NewCellManager()
-	defer manager.(*DefaultCellManager).Shutdown()
+	defer func() { _ = manager.(*DefaultCellManager).Shutdown() }()
 
 	spec := CellSpec{
 		ID:         "test-cell-1",
@@ -92,7 +92,7 @@ func TestCellManager_DeleteCell(t *testing.T) {
 
 func TestCellManager_AddRemovePlayer(t *testing.T) {
 	manager := NewCellManager()
-	defer manager.(*DefaultCellManager).Shutdown()
+	defer func() { _ = manager.(*DefaultCellManager).Shutdown() }()
 
 	spec := CellSpec{
 		ID:         "test-cell-1",
@@ -141,7 +141,7 @@ func TestCellManager_AddRemovePlayer(t *testing.T) {
 
 func TestCellManager_UpdatePlayerPosition(t *testing.T) {
 	manager := NewCellManager()
-	defer manager.(*DefaultCellManager).Shutdown()
+	defer func() { _ = manager.(*DefaultCellManager).Shutdown() }()
 
 	spec := CellSpec{
 		ID:         "test-cell-1",
@@ -192,7 +192,7 @@ func TestCellManager_UpdatePlayerPosition(t *testing.T) {
 
 func TestCellManager_GetHealth(t *testing.T) {
 	manager := NewCellManager()
-	defer manager.(*DefaultCellManager).Shutdown()
+	defer func() { _ = manager.(*DefaultCellManager).Shutdown() }()
 
 	spec := CellSpec{
 		ID:         "test-cell-1",
@@ -221,7 +221,7 @@ func TestCellManager_GetHealth(t *testing.T) {
 
 func TestCellManager_GetMetrics(t *testing.T) {
 	manager := NewCellManager()
-	defer manager.(*DefaultCellManager).Shutdown()
+	defer func() { _ = manager.(*DefaultCellManager).Shutdown() }()
 
 	spec := CellSpec{
 		ID:         "test-cell-1",
@@ -258,7 +258,7 @@ func TestCellManager_GetMetrics(t *testing.T) {
 
 func TestCellManager_ListCells(t *testing.T) {
 	manager := NewCellManager()
-	defer manager.(*DefaultCellManager).Shutdown()
+	defer func() { _ = manager.(*DefaultCellManager).Shutdown() }()
 
 	defaultManager := manager.(*DefaultCellManager)
 
@@ -295,7 +295,7 @@ func TestCellManager_ListCells(t *testing.T) {
 
 func TestCellManager_GetCellStats(t *testing.T) {
 	manager := NewCellManager()
-	defer manager.(*DefaultCellManager).Shutdown()
+	defer func() { _ = manager.(*DefaultCellManager).Shutdown() }()
 
 	defaultManager := manager.(*DefaultCellManager)
 
@@ -334,7 +334,7 @@ func TestCellManager_GetCellStats(t *testing.T) {
 
 func TestCellManager_Checkpoint(t *testing.T) {
 	manager := NewCellManager()
-	defer manager.(*DefaultCellManager).Shutdown()
+	defer func() { _ = manager.(*DefaultCellManager).Shutdown() }()
 
 	spec := CellSpec{
 		ID:         "test-cell-1",
@@ -360,7 +360,7 @@ func TestCellManager_Checkpoint(t *testing.T) {
 
 func TestCellManager_GetPlayerSession(t *testing.T) {
 	manager := NewCellManager()
-	defer manager.(*DefaultCellManager).Shutdown()
+	defer func() { _ = manager.(*DefaultCellManager).Shutdown() }()
 
 	defaultManager := manager.(*DefaultCellManager)
 
@@ -408,7 +408,7 @@ func TestCellManager_GetPlayerSession(t *testing.T) {
 
 func TestCellManager_NonExistentCell(t *testing.T) {
 	manager := NewCellManager()
-	defer manager.(*DefaultCellManager).Shutdown()
+	defer func() { _ = manager.(*DefaultCellManager).Shutdown() }()
 
 	// Try to get non-existent cell
 	_, err := manager.GetCell("non-existent")
