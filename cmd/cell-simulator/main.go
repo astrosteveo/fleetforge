@@ -206,10 +206,10 @@ func startHealthServer(port int, cellSim *cell.CellSimulator, logger logr.Logger
 // startMetricsServer starts the Prometheus metrics HTTP server
 func startMetricsServer(port int, cellSim *cell.CellSimulator, logger logr.Logger) {
 	mux := http.NewServeMux()
-	
+
 	// Prometheus metrics endpoint
 	mux.Handle("/metrics", promhttp.Handler())
-	
+
 	server := &http.Server{
 		Addr:    ":" + strconv.Itoa(port),
 		Handler: mux,

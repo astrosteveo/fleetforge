@@ -11,14 +11,14 @@ import (
 
 // CellSimulator wraps a cell manager to provide simulation capabilities
 type CellSimulator struct {
-	cellID           CellID
-	boundaries       fleetforgev1.WorldBounds
-	MaxPlayers       int32 // Made public for access in main
-	logger           logr.Logger
-	manager          CellManager
-	cell             *Cell
-	ctx              context.Context
-	cancel           context.CancelFunc
+	cellID            CellID
+	boundaries        fleetforgev1.WorldBounds
+	MaxPlayers        int32 // Made public for access in main
+	logger            logr.Logger
+	manager           CellManager
+	cell              *Cell
+	ctx               context.Context
+	cancel            context.CancelFunc
 	prometheusMetrics *PrometheusMetrics
 }
 
@@ -206,8 +206,8 @@ func (cs *CellSimulator) UpdatePrometheusMetrics() {
 		// If cell is not initialized, set minimal metrics
 		cs.prometheusMetrics.SetCellsActive(0)
 		cs.prometheusMetrics.SetUtilizationRate(0.0)
-		cs.prometheusMetrics.CellsTotal.Set(1)     // This cell exists but not active
-		cs.prometheusMetrics.CellsRunning.Set(0)   // Not running yet
+		cs.prometheusMetrics.CellsTotal.Set(1)   // This cell exists but not active
+		cs.prometheusMetrics.CellsRunning.Set(0) // Not running yet
 		cs.prometheusMetrics.PlayersTotal.Set(0)
 		cs.prometheusMetrics.CapacityTotal.Set(float64(cs.MaxPlayers))
 		return
@@ -222,18 +222,18 @@ func (cs *CellSimulator) UpdatePrometheusMetrics() {
 
 	// Update per-cell metrics
 	cs.prometheusMetrics.UpdateCellMetrics(string(cs.cellID), cellMetrics)
-	
+
 	// Set cells active to 1 since this cell is active
 	cs.prometheusMetrics.SetCellsActive(1)
 	cs.prometheusMetrics.CellsTotal.Set(1)
 	cs.prometheusMetrics.CellsRunning.Set(1)
-	
+
 	// Set total player count and capacity
 	if playerCount, ok := cellMetrics["player_count"]; ok {
 		cs.prometheusMetrics.PlayersTotal.Set(playerCount)
 	}
 	cs.prometheusMetrics.CapacityTotal.Set(float64(cs.MaxPlayers))
-	
+
 	// Calculate utilization rate - for single cell it's just the load
 	if maxPlayers, ok := cellMetrics["max_players"]; ok && maxPlayers > 0 {
 		if playerCount, ok := cellMetrics["player_count"]; ok {
