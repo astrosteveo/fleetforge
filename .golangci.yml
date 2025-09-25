@@ -34,10 +34,6 @@ linters:
     - goconst
     - unconvert
     - unparam
-  disable:
-    - structcheck # deprecated in favor of unused
-    - deadcode # deprecated in favor of unused
-    - varcheck # deprecated in favor of unused
 
 issues:
   exclude-rules:

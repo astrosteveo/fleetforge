@@ -324,7 +324,7 @@ func (m *DefaultCellManager) GetCellStats() map[string]interface{} {
 		totalPlayers += state.PlayerCount
 		totalCapacity += state.Capacity.MaxPlayers
 
-		if state.Phase == "Running" {
+		if state.Phase == CellPhaseRunning {
 			runningCells++
 		}
 	}

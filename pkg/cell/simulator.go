@@ -120,7 +120,7 @@ func (cs *CellSimulator) GetStatus() map[string]interface{} {
 	if cs.cell == nil {
 		return map[string]interface{}{
 			"id":             string(cs.cellID),
-			"health":         "NotReady",
+			"health":         CellHealthNotReady,
 			"currentPlayers": 0,
 			"maxPlayers":     cs.MaxPlayers,
 			"ready":          false,
@@ -144,19 +144,19 @@ func (cs *CellSimulator) GetStatus() map[string]interface{} {
 // getHealthString converts HealthStatus to a string representation
 func (cs *CellSimulator) getHealthString(health *HealthStatus) string {
 	if !health.Healthy {
-		return "Unhealthy"
+		return CellHealthUnhealthy
 	}
 
 	// Calculate load percentage
 	loadPercentage := float64(health.PlayerCount) / float64(cs.MaxPlayers)
 
 	if loadPercentage >= 0.9 {
-		return "Overloaded"
+		return CellHealthOverloaded
 	} else if loadPercentage >= 0.7 {
-		return "Near Capacity"
+		return CellHealthNearCapacity
 	}
 
-	return "Healthy"
+	return CellHealthHealthy
 }
 
 // AddPlayer adds a player to the cell for simulation

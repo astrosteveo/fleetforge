@@ -50,7 +50,7 @@ func NewCell(spec CellSpec) (*Cell, error) {
 			Neighbors:   make([]CellID, 0),
 			Tick:        0,
 			GameState:   spec.GameConfig,
-			Phase:       "Initializing",
+			Phase:       CellPhaseInitializing,
 			Ready:       false,
 		},
 		aoi:                     NewBasicAOIFilter(),
@@ -71,11 +71,11 @@ func (c *Cell) Start(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.state.Phase != "Initializing" {
+	if c.state.Phase != CellPhaseInitializing {
 		return fmt.Errorf("cell is not in initializing phase")
 	}
 
-	c.state.Phase = "Starting"
+	c.state.Phase = CellPhaseStarting
 	c.state.Ready = false
 	c.ticker = time.NewTicker(c.tickRate)
 
@@ -87,8 +87,8 @@ func (c *Cell) Start(ctx context.Context) error {
 		c.mu.Lock()
 		defer c.mu.Unlock()
 		// Only transition to Running if still in Starting phase
-		if c.state.Phase == "Starting" {
-			c.state.Phase = "Running"
+		if c.state.Phase == CellPhaseStarting {
+			c.state.Phase = CellPhaseRunning
 			c.state.Ready = true
 		}
 	})
@@ -101,11 +101,11 @@ func (c *Cell) Stop() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.state.Phase == "Stopped" {
+	if c.state.Phase == CellPhaseStopped {
 		return nil
 	}
 
-	c.state.Phase = "Stopping"
+	c.state.Phase = CellPhaseStopping
 	c.state.Ready = false
 
 	// Cancel the ready timer if it hasn't fired yet
@@ -119,7 +119,7 @@ func (c *Cell) Stop() error {
 		c.ticker.Stop()
 	}
 
-	c.state.Phase = "Stopped"
+	c.state.Phase = CellPhaseStopped
 	return nil
 }
 
@@ -319,7 +319,7 @@ func (c *Cell) GetHealth() *HealthStatus {
 	uptime := time.Since(c.startTime)
 
 	health := &HealthStatus{
-		Healthy:        c.state.Ready && c.state.Phase == "Running",
+		Healthy:        c.state.Ready && c.state.Phase == CellPhaseRunning,
 		LastCheckpoint: c.metrics.LastCheckpoint,
 		PlayerCount:    c.state.PlayerCount,
 		CPUUsage:       c.metrics.CPUUsage,

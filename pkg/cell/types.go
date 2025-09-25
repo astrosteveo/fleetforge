@@ -6,6 +6,24 @@ import (
 	"github.com/astrosteveo/fleetforge/api/v1"
 )
 
+// Cell phase constants
+const (
+	CellPhaseInitializing = "Initializing"
+	CellPhaseStarting     = "Starting"
+	CellPhaseRunning      = "Running"
+	CellPhaseStopping     = "Stopping"
+	CellPhaseStopped      = "Stopped"
+)
+
+// Cell health status constants
+const (
+	CellHealthHealthy     = "Healthy"
+	CellHealthUnhealthy   = "Unhealthy"
+	CellHealthOverloaded  = "Overloaded"
+	CellHealthNearCapacity = "Near Capacity"
+	CellHealthNotReady    = "NotReady"
+)
+
 // PlayerID represents a unique player identifier
 type PlayerID string
 
