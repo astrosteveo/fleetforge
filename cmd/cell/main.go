@@ -92,7 +92,9 @@ func (s *CellService) handleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(health)
+	if err := json.NewEncoder(w).Encode(health); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
 }
 
 // handleReady handles readiness check requests
@@ -108,7 +110,9 @@ func (s *CellService) handleReady(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(ready)
+	if err := json.NewEncoder(w).Encode(ready); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
 }
 
 // handleCells handles cell list and creation requests
@@ -153,7 +157,9 @@ func (s *CellService) handleListCells(w http.ResponseWriter, r *http.Request) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		}
 	} else {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 	}
@@ -202,7 +208,9 @@ func (s *CellService) handleCreateCell(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
 }
 
 // handleCellDetails handles requests for specific cell details
@@ -251,7 +259,9 @@ func (s *CellService) handleGetCell(w http.ResponseWriter, r *http.Request, cell
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
 }
 
 // handleDeleteCell deletes a specific cell
@@ -304,7 +314,9 @@ fleetforge_utilization_rate %.2f
 		)
 
 		w.Header().Set("Content-Type", "text/plain")
-		w.Write([]byte(metrics))
+		if _, err := w.Write([]byte(metrics)); err != nil {
+			http.Error(w, "Failed to write response", http.StatusInternalServerError)
+		}
 	} else {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 	}
@@ -396,7 +408,9 @@ func (s *CellService) handlePlayers(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
 }
 
 // handlePlayerDetails handles operations on specific players (DELETE to remove)

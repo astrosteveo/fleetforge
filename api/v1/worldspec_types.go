@@ -20,6 +20,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// WorldSpec phase constants
+const (
+	WorldSpecPhaseCreating = "Creating"
+	WorldSpecPhaseRunning  = "Running"
+	WorldSpecPhaseFailed   = "Failed"
+)
+
 // WorldBounds defines the spatial boundaries of a world or cell
 type WorldBounds struct {
 	// XMin is the minimum X coordinate

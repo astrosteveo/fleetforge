@@ -6,6 +6,26 @@ import (
 	"github.com/astrosteveo/fleetforge/api/v1"
 )
 
+// Cell phase constants
+const (
+	PhaseInitializing = "Initializing"
+	PhaseStarting     = "Starting" 
+	PhaseRunning      = "Running"
+	PhaseStopping     = "Stopping"
+	PhaseStopped      = "Stopped"
+	PhaseCreating     = "Creating"
+)
+
+// Common error message constants
+const (
+	ErrMsgFailedToCreateCell          = "failed to create cell: %w"
+	ErrMsgNoSessionFoundForPlayer     = "no session found for player %s"
+	ErrMsgNoActiveSessionForPlayer    = "no active session found for player %s"
+	ErrMsgCellNotFound               = "cell with ID %s not found"
+	ErrMsgPlayerNotFound             = "player not found in cell"
+	ErrMsgCellNotInitialized         = "cell not initialized"
+)
+
 // PlayerID represents a unique player identifier
 type PlayerID string
 

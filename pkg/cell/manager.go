@@ -45,7 +45,7 @@ func (m *DefaultCellManager) CreateCell(spec CellSpec) (*Cell, error) {
 
 	cell, err := NewCell(spec)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create cell: %w", err)
+		return nil, fmt.Errorf(ErrMsgFailedToCreateCell, err)
 	}
 
 	if err := cell.Start(m.ctx); err != nil {
@@ -64,7 +64,7 @@ func (m *DefaultCellManager) GetCell(id CellID) (*Cell, error) {
 
 	cell, exists := m.cells[id]
 	if !exists {
-		return nil, fmt.Errorf("cell with ID %s not found", id)
+		return nil, fmt.Errorf(ErrMsgCellNotFound, id)
 	}
 
 	return cell, nil
@@ -77,7 +77,7 @@ func (m *DefaultCellManager) DeleteCell(id CellID) error {
 
 	cell, exists := m.cells[id]
 	if !exists {
-		return fmt.Errorf("cell with ID %s not found", id)
+		return fmt.Errorf(ErrMsgCellNotFound, id)
 	}
 
 	// Remove all players from the cell first
@@ -275,7 +275,7 @@ func (m *DefaultCellManager) GetPlayerSession(playerID PlayerID) (*PlayerSession
 
 	session, exists := m.sessions[playerID]
 	if !exists {
-		return nil, fmt.Errorf("no session found for player %s", playerID)
+		return nil, fmt.Errorf(ErrMsgNoSessionFoundForPlayer, playerID)
 	}
 
 	// Return a copy to prevent external modification
@@ -324,7 +324,7 @@ func (m *DefaultCellManager) GetCellStats() map[string]interface{} {
 		totalPlayers += state.PlayerCount
 		totalCapacity += state.Capacity.MaxPlayers
 
-		if state.Phase == "Running" {
+		if state.Phase == PhaseRunning {
 			runningCells++
 		}
 	}

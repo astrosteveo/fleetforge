@@ -127,7 +127,9 @@ func startHealthServer(port int, cellSim *cell.CellSimulator, logger logr.Logger
 			healthString = "Unhealthy"
 		}
 
-		fmt.Fprintf(w, `{"health": "%s", "playerCount": %d}`, healthString, playerCount)
+		if _, err := fmt.Fprintf(w, `{"health": "%s", "playerCount": %d}`, healthString, playerCount); err != nil {
+			logger.Error(err, "Failed to write health response")
+		}
 	})
 
 	// Readiness check endpoint
@@ -138,10 +140,14 @@ func startHealthServer(port int, cellSim *cell.CellSimulator, logger logr.Logger
 
 		if health.Healthy && loadPercentage < 0.9 {
 			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, `{"ready": true}`)
+			if _, err := fmt.Fprint(w, `{"ready": true}`); err != nil {
+				logger.Error(err, "Failed to write ready response")
+			}
 		} else {
 			w.WriteHeader(http.StatusServiceUnavailable)
-			fmt.Fprint(w, `{"ready": false}`)
+			if _, err := fmt.Fprint(w, `{"ready": false}`); err != nil {
+				logger.Error(err, "Failed to write ready response")
+			}
 		}
 	})
 
@@ -162,7 +168,7 @@ func startHealthServer(port int, cellSim *cell.CellSimulator, logger logr.Logger
 		}
 
 		// Use proper JSON marshaling for complex structure
-		fmt.Fprintf(w, `{
+		if _, err := fmt.Fprintf(w, `{
 			"id": "%s",
 			"health": "%s", 
 			"currentPlayers": %v,
@@ -184,7 +190,9 @@ func startHealthServer(port int, cellSim *cell.CellSimulator, logger logr.Logger
 			boundaries.XMax,
 			yMinVal,
 			yMaxVal,
-		)
+		); err != nil {
+			logger.Error(err, "Failed to write status response")
+		}
 	})
 
 	server := &http.Server{

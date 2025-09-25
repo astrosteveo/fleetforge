@@ -76,7 +76,7 @@ func (r *WorldSpecReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	// Set initial phase if not set
 	if worldSpec.Status.Phase == "" {
-		worldSpec.Status.Phase = "Creating"
+		worldSpec.Status.Phase = fleetforgev1.WorldSpecPhaseCreating
 		if err := r.updateStatus(ctx, worldSpec, log); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -321,10 +321,10 @@ func (r *WorldSpecReconciler) updateWorldSpecStatus(ctx context.Context, worldSp
 
 	// Update phase based on readiness
 	if isReady {
-		worldSpec.Status.Phase = "Running"
+		worldSpec.Status.Phase = fleetforgev1.WorldSpecPhaseRunning
 		worldSpec.Status.Message = fmt.Sprintf("World running with %d/%d active cells", activeCells, expectedCells)
 	} else {
-		worldSpec.Status.Phase = "Creating"
+		worldSpec.Status.Phase = fleetforgev1.WorldSpecPhaseCreating
 		worldSpec.Status.Message = fmt.Sprintf("Waiting for cells to become ready (%d/%d)", activeCells, expectedCells)
 	}
 

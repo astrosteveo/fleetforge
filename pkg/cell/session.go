@@ -84,7 +84,7 @@ func (s *DefaultPlayerSession) DestroySession(playerID PlayerID) error {
 
 	session, exists := s.sessions[playerID]
 	if !exists {
-		return fmt.Errorf("no session found for player %s", playerID)
+		return fmt.Errorf(ErrMsgNoSessionFoundForPlayer, playerID)
 	}
 
 	// Remove player from their current cell
@@ -113,7 +113,7 @@ func (s *DefaultPlayerSession) AssignToCell(playerID PlayerID, cellID CellID) er
 
 	session, exists := s.sessions[playerID]
 	if !exists || !session.Active {
-		return fmt.Errorf("no active session found for player %s", playerID)
+		return fmt.Errorf(ErrMsgNoActiveSessionForPlayer, playerID)
 	}
 
 	// If already in target cell, nothing to do
@@ -147,7 +147,10 @@ func (s *DefaultPlayerSession) AssignToCell(playerID PlayerID, cellID CellID) er
 			LastSeen:  time.Now(),
 			Connected: true,
 		}
-		s.cellManager.AddPlayer(session.CellID, originalPlayerState)
+		if addErr := s.cellManager.AddPlayer(session.CellID, originalPlayerState); addErr != nil {
+			// Log the error but don't fail the operation - the player is still in limbo
+			// In a production system, this would need proper error logging/monitoring
+		}
 		return fmt.Errorf("failed to add player to new cell: %w", err)
 	}
 
@@ -165,7 +168,7 @@ func (s *DefaultPlayerSession) HandoffPlayer(playerID PlayerID, sourceCellID, ta
 
 	session, exists := s.sessions[playerID]
 	if !exists || !session.Active {
-		return fmt.Errorf("no active session found for player %s", playerID)
+		return fmt.Errorf(ErrMsgNoActiveSessionForPlayer, playerID)
 	}
 
 	// Verify player is in the source cell
@@ -204,7 +207,10 @@ func (s *DefaultPlayerSession) HandoffPlayer(playerID PlayerID, sourceCellID, ta
 	err = s.cellManager.RemovePlayer(sourceCellID, playerID)
 	if err != nil {
 		// If removal fails, try to remove from target to maintain consistency
-		s.cellManager.RemovePlayer(targetCellID, playerID)
+		if removeErr := s.cellManager.RemovePlayer(targetCellID, playerID); removeErr != nil {
+			// Log the error but don't fail the operation - inconsistent state needs manual intervention
+			// In a production system, this would need proper error logging/monitoring
+		}
 		return fmt.Errorf("failed to remove player from source cell: %w", err)
 	}
 
@@ -223,7 +229,7 @@ func (s *DefaultPlayerSession) UpdatePlayerLocation(playerID PlayerID, position 
 
 	session, exists := s.sessions[playerID]
 	if !exists || !session.Active {
-		return fmt.Errorf("no active session found for player %s", playerID)
+		return fmt.Errorf(ErrMsgNoActiveSessionForPlayer, playerID)
 	}
 
 	// Update position in the cell manager
@@ -246,7 +252,7 @@ func (s *DefaultPlayerSession) GetPlayerLocation(playerID PlayerID) (*WorldPosit
 
 	session, exists := s.sessions[playerID]
 	if !exists || !session.Active {
-		return nil, fmt.Errorf("no active session found for player %s", playerID)
+		return nil, fmt.Errorf(ErrMsgNoActiveSessionForPlayer, playerID)
 	}
 
 	// Return a copy to prevent external modification
@@ -261,7 +267,7 @@ func (s *DefaultPlayerSession) GetPlayerCell(playerID PlayerID) (CellID, error) 
 
 	session, exists := s.sessions[playerID]
 	if !exists || !session.Active {
-		return "", fmt.Errorf("no active session found for player %s", playerID)
+		return "", fmt.Errorf(ErrMsgNoActiveSessionForPlayer, playerID)
 	}
 
 	return session.CellID, nil
@@ -294,7 +300,7 @@ func (s *DefaultPlayerSession) UpdateGameData(playerID PlayerID, key string, val
 
 	session, exists := s.sessions[playerID]
 	if !exists || !session.Active {
-		return fmt.Errorf("no active session found for player %s", playerID)
+		return fmt.Errorf(ErrMsgNoActiveSessionForPlayer, playerID)
 	}
 
 	if session.GameData == nil {

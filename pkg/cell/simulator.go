@@ -50,7 +50,7 @@ func (cs *CellSimulator) Start() error {
 
 	cell, err := cs.manager.CreateCell(spec)
 	if err != nil {
-		return fmt.Errorf("failed to create cell: %w", err)
+		return fmt.Errorf(ErrMsgFailedToCreateCell, err)
 	}
 
 	cs.cell = cell
@@ -162,7 +162,7 @@ func (cs *CellSimulator) getHealthString(health *HealthStatus) string {
 // AddPlayer adds a player to the cell for simulation
 func (cs *CellSimulator) AddPlayer(playerID string, position WorldPosition) error {
 	if cs.cell == nil {
-		return fmt.Errorf("cell not initialized")
+		return fmt.Errorf(ErrMsgCellNotInitialized)
 	}
 
 	player := &PlayerState{
@@ -178,7 +178,7 @@ func (cs *CellSimulator) AddPlayer(playerID string, position WorldPosition) erro
 // RemovePlayer removes a player from the cell
 func (cs *CellSimulator) RemovePlayer(playerID string) error {
 	if cs.cell == nil {
-		return fmt.Errorf("cell not initialized")
+		return fmt.Errorf(ErrMsgCellNotInitialized)
 	}
 
 	return cs.manager.RemovePlayer(cs.cellID, PlayerID(playerID))
@@ -187,7 +187,7 @@ func (cs *CellSimulator) RemovePlayer(playerID string) error {
 // UpdatePlayerPosition updates a player's position
 func (cs *CellSimulator) UpdatePlayerPosition(playerID string, position WorldPosition) error {
 	if cs.cell == nil {
-		return fmt.Errorf("cell not initialized")
+		return fmt.Errorf(ErrMsgCellNotInitialized)
 	}
 
 	return cs.manager.UpdatePlayerPosition(cs.cellID, PlayerID(playerID), position)
