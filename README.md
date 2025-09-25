@@ -80,9 +80,20 @@ To modify the configuration, edit `awesome-copilot.config.yml` and run:
 node awesome-copilot/awesome-copilot.js apply
 ```
 
-## 📝 Documentation PDFs
+## 📝 Documentation
 
-You can generate PDF versions of every Markdown file in the `docs/` directory.
+Core documentation has been reorganized for clarity:
+
+```text
+docs/
+  product/        # prd.md, requirements.md, tasks.md
+  architecture/   # design.md, future diagrams/
+  research/       # academic/reference papers
+  adr/            # architecture decision records
+  ops/            # runbooks (planned)
+```
+
+Generate PDF versions of Markdown files (outputs alongside sources):
 
 ### Local Generation
 
@@ -100,7 +111,7 @@ Force a clean rebuild:
 make clean && make pdfs
 ```
 
-Outputs are created alongside their source (e.g. `docs/design.md` -> `docs/design.pdf`).
+Outputs are created alongside their source (e.g. `docs/architecture/design.md` -> `docs/architecture/design.pdf`).
 
 ### GitHub Action
 
