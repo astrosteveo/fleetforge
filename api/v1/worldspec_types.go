@@ -40,6 +40,53 @@ type WorldBounds struct {
 	ZMax *float64 `json:"zMax,omitempty"`
 }
 
+// CalculateArea calculates the area/volume of the world bounds
+// Returns 0 if dimensions are invalid (min >= max)
+func (wb WorldBounds) CalculateArea() float64 {
+	// Calculate X dimension
+	xDimension := wb.XMax - wb.XMin
+	if xDimension <= 0 {
+		return 0
+	}
+
+	// Check if we have Y dimension
+	var yDimension float64 = 1 // Default for 1D
+	if wb.YMin != nil && wb.YMax != nil {
+		yDimension = *wb.YMax - *wb.YMin
+		if yDimension <= 0 {
+			return 0
+		}
+	}
+
+	// Check if we have Z dimension
+	var zDimension float64 = 1 // Default for 1D/2D
+	if wb.ZMin != nil && wb.ZMax != nil {
+		zDimension = *wb.ZMax - *wb.ZMin
+		if zDimension <= 0 {
+			return 0
+		}
+	}
+
+	return xDimension * yDimension * zDimension
+}
+
+// IsValidBounds checks if the bounds are valid (min < max for all dimensions)
+func (wb WorldBounds) IsValidBounds() bool {
+	if wb.XMin >= wb.XMax {
+		return false
+	}
+
+	if wb.YMin != nil && wb.YMax != nil && *wb.YMin >= *wb.YMax {
+		return false
+	}
+
+	if wb.ZMin != nil && wb.ZMax != nil && *wb.ZMin >= *wb.ZMax {
+		return false
+	}
+
+	return true
+}
+
 // WorldTopology defines the spatial layout and initial cell configuration
 type WorldTopology struct {
 	// InitialCells is the number of cells to create at startup
