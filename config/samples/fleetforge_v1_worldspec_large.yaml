@@ -1,0 +1,56 @@
+apiVersion: fleetforge.io/v1
+kind: WorldSpec
+metadata:
+  labels:
+    app.kubernetes.io/name: worldspec
+    app.kubernetes.io/instance: worldspec-large
+    app.kubernetes.io/part-of: fleetforge
+  name: worldspec-large
+spec:
+  # Large-scale world configuration
+  topology:
+    initialCells: 10
+    maxCellsPerCluster: 200
+    worldBoundaries:
+      xMin: -10000.0
+      xMax: 10000.0
+      yMin: -10000.0
+      yMax: 10000.0
+      zMin: -1000.0
+      zMax: 1000.0
+    cellSize:
+      xMin: 0.0
+      xMax: 1000.0
+      yMin: 0.0 
+      yMax: 1000.0
+      zMin: 0.0
+      zMax: 500.0
+
+  # High-capacity cell configuration
+  capacity:
+    maxPlayersPerCell: 500
+    cpuLimitPerCell: "4000m"
+    memoryLimitPerCell: "8Gi"
+    cpuRequestPerCell: "2000m"
+    memoryRequestPerCell: "4Gi"
+
+  # Aggressive scaling for large worlds
+  scaling:
+    scaleUpThreshold: 0.75
+    scaleDownThreshold: 0.25
+    predictiveEnabled: true
+    minCells: 5
+    maxCells: 1000
+
+  # Enhanced persistence for large worlds
+  persistence:
+    checkpointInterval: "3m"
+    retentionPeriod: "30d"
+    enabled: true
+    storageClass: "fast-ssd"
+
+  # Container image for cell game servers
+  gameServerImage: "fleetforge-cell:v1.0.0"
+  
+  # Enable multi-cluster for large scale
+  multiClusterEnabled: true

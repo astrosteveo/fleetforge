@@ -2,6 +2,16 @@
 # Uncomment the line below if you want to keep config private:
 # awesome-copilot.config.yml
 
+# Go build artifacts
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
 # Common Node.js ignores (if needed for future development)
 node_modules/
 npm-debug.log*
@@ -24,3 +34,6 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+
+# Test coverage
+cover.out
