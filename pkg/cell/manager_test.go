@@ -844,7 +844,7 @@ func TestCellSplitAcceptanceCriteria(t *testing.T) {
 	t.Logf("Cell count after split: %d", cellCountAfterSplit)
 
 	if cellCountAfterSplit != cellCountBeforeSplit+1 && cellCountAfterSplit != cellCountBeforeSplit+2 {
-		t.Errorf("Cell count should increase by 1 or 2 after split. Before: %d, After: %d", 
+		t.Errorf("Cell count should increase by 1 or 2 after split. Before: %d, After: %d",
 			cellCountBeforeSplit, cellCountAfterSplit)
 	}
 
@@ -892,7 +892,7 @@ func TestCellSplitAcceptanceCriteria(t *testing.T) {
 		t.Error("Split event should have duration recorded")
 	} else {
 		t.Logf("Split duration: %v", *splitEvent.Duration)
-		
+
 		// Duration should be reasonable (not zero and not too long)
 		if *splitEvent.Duration <= 0 {
 			t.Error("Split duration should be positive")
