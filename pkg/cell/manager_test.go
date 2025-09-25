@@ -124,8 +124,8 @@ func TestCellManager_AddRemovePlayer(t *testing.T) {
 	time.Sleep(time.Millisecond * 150)
 
 	player := &PlayerState{
-		ID:       "player-1",
-		Position: WorldPosition{X: 500, Y: 500},
+		ID:        "player-1",
+		Position:  WorldPosition{X: 500, Y: 500},
 		Connected: true,
 	}
 
@@ -176,8 +176,8 @@ func TestCellManager_UpdatePlayerPosition(t *testing.T) {
 	time.Sleep(time.Millisecond * 150)
 
 	player := &PlayerState{
-		ID:       "player-1",
-		Position: WorldPosition{X: 500, Y: 500},
+		ID:        "player-1",
+		Position:  WorldPosition{X: 500, Y: 500},
 		Connected: true,
 	}
 
@@ -415,8 +415,8 @@ func TestCellManager_GetPlayerSession(t *testing.T) {
 	time.Sleep(time.Millisecond * 150)
 
 	player := &PlayerState{
-		ID:       "player-1",
-		Position: WorldPosition{X: 500, Y: 500},
+		ID:        "player-1",
+		Position:  WorldPosition{X: 500, Y: 500},
 		Connected: true,
 	}
 
@@ -459,8 +459,8 @@ func TestCellManager_NonExistentCell(t *testing.T) {
 
 	// Try to add player to non-existent cell
 	player := &PlayerState{
-		ID:       "player-1",
-		Position: WorldPosition{X: 500, Y: 500},
+		ID:        "player-1",
+		Position:  WorldPosition{X: 500, Y: 500},
 		Connected: true,
 	}
 

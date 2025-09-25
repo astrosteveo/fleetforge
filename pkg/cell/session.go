@@ -17,13 +17,13 @@ type DefaultPlayerSession struct {
 
 // PlayerSessionData holds detailed session information
 type PlayerSessionData struct {
-	PlayerID    PlayerID      `json:"playerId"`
-	CellID      CellID        `json:"cellId"`
-	Position    WorldPosition `json:"position"`
-	CreatedAt   time.Time     `json:"createdAt"`
-	LastActive  time.Time     `json:"lastActive"`
-	Active      bool          `json:"active"`
-	
+	PlayerID   PlayerID      `json:"playerId"`
+	CellID     CellID        `json:"cellId"`
+	Position   WorldPosition `json:"position"`
+	CreatedAt  time.Time     `json:"createdAt"`
+	LastActive time.Time     `json:"lastActive"`
+	Active     bool          `json:"active"`
+
 	// Session-specific data
 	SessionToken string                 `json:"sessionToken,omitempty"`
 	GameData     map[string]interface{} `json:"gameData,omitempty"`
@@ -41,7 +41,7 @@ func NewPlayerSession(cellManager CellManager) PlayerSession {
 func (s *DefaultPlayerSession) CreateSession(playerID PlayerID, cellID CellID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	// Check if session already exists
 	if existingSession, exists := s.sessions[playerID]; exists {
 		if existingSession.Active {
@@ -53,13 +53,13 @@ func (s *DefaultPlayerSession) CreateSession(playerID PlayerID, cellID CellID) e
 		existingSession.LastActive = time.Now()
 		return nil
 	}
-	
+
 	// Verify the cell exists
 	_, err := s.cellManager.GetCell(cellID)
 	if err != nil {
 		return fmt.Errorf("cannot create session: %w", err)
 	}
-	
+
 	// Create new session
 	session := &PlayerSessionData{
 		PlayerID:     playerID,
@@ -71,9 +71,9 @@ func (s *DefaultPlayerSession) CreateSession(playerID PlayerID, cellID CellID) e
 		SessionToken: generateSessionToken(playerID),
 		GameData:     make(map[string]interface{}),
 	}
-	
+
 	s.sessions[playerID] = session
-	
+
 	return nil
 }
 
@@ -81,12 +81,12 @@ func (s *DefaultPlayerSession) CreateSession(playerID PlayerID, cellID CellID) e
 func (s *DefaultPlayerSession) DestroySession(playerID PlayerID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	session, exists := s.sessions[playerID]
 	if !exists {
 		return fmt.Errorf("no session found for player %s", playerID)
 	}
-	
+
 	// Remove player from their current cell
 	if session.Active {
 		err := s.cellManager.RemovePlayer(session.CellID, playerID)
@@ -95,14 +95,14 @@ func (s *DefaultPlayerSession) DestroySession(playerID PlayerID) error {
 			// This can happen if the cell was already deleted
 		}
 	}
-	
+
 	// Mark session as inactive but keep it for potential cleanup
 	session.Active = false
 	session.LastActive = time.Now()
-	
+
 	// Remove from active sessions
 	delete(s.sessions, playerID)
-	
+
 	return nil
 }
 
@@ -110,23 +110,23 @@ func (s *DefaultPlayerSession) DestroySession(playerID PlayerID) error {
 func (s *DefaultPlayerSession) AssignToCell(playerID PlayerID, cellID CellID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	session, exists := s.sessions[playerID]
 	if !exists || !session.Active {
 		return fmt.Errorf("no active session found for player %s", playerID)
 	}
-	
+
 	// If already in target cell, nothing to do
 	if session.CellID == cellID {
 		return nil
 	}
-	
+
 	// Remove from current cell
 	err := s.cellManager.RemovePlayer(session.CellID, playerID)
 	if err != nil {
 		return fmt.Errorf("failed to remove player from current cell: %w", err)
 	}
-	
+
 	// Create player state for new cell
 	playerState := &PlayerState{
 		ID:        playerID,
@@ -135,7 +135,7 @@ func (s *DefaultPlayerSession) AssignToCell(playerID PlayerID, cellID CellID) er
 		LastSeen:  time.Now(),
 		Connected: true,
 	}
-	
+
 	// Add to new cell
 	err = s.cellManager.AddPlayer(cellID, playerState)
 	if err != nil {
@@ -150,11 +150,11 @@ func (s *DefaultPlayerSession) AssignToCell(playerID PlayerID, cellID CellID) er
 		s.cellManager.AddPlayer(session.CellID, originalPlayerState)
 		return fmt.Errorf("failed to add player to new cell: %w", err)
 	}
-	
+
 	// Update session
 	session.CellID = cellID
 	session.LastActive = time.Now()
-	
+
 	return nil
 }
 
@@ -162,29 +162,29 @@ func (s *DefaultPlayerSession) AssignToCell(playerID PlayerID, cellID CellID) er
 func (s *DefaultPlayerSession) HandoffPlayer(playerID PlayerID, sourceCellID, targetCellID CellID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	session, exists := s.sessions[playerID]
 	if !exists || !session.Active {
 		return fmt.Errorf("no active session found for player %s", playerID)
 	}
-	
+
 	// Verify player is in the source cell
 	if session.CellID != sourceCellID {
 		return fmt.Errorf("player %s is not in source cell %s, currently in %s", playerID, sourceCellID, session.CellID)
 	}
-	
+
 	// Get current player state from source cell
 	sourceCell, err := s.cellManager.GetCell(sourceCellID)
 	if err != nil {
 		return fmt.Errorf("source cell not found: %w", err)
 	}
-	
+
 	sourceState := sourceCell.GetState()
 	playerState, exists := sourceState.Players[playerID]
 	if !exists {
 		return fmt.Errorf("player %s not found in source cell %s", playerID, sourceCellID)
 	}
-	
+
 	// Create a copy of the player state for the target cell
 	targetPlayerState := &PlayerState{
 		ID:        playerState.ID,
@@ -193,13 +193,13 @@ func (s *DefaultPlayerSession) HandoffPlayer(playerID PlayerID, sourceCellID, ta
 		LastSeen:  time.Now(),
 		Connected: true,
 	}
-	
+
 	// Add to target cell first
 	err = s.cellManager.AddPlayer(targetCellID, targetPlayerState)
 	if err != nil {
 		return fmt.Errorf("failed to add player to target cell: %w", err)
 	}
-	
+
 	// Remove from source cell
 	err = s.cellManager.RemovePlayer(sourceCellID, playerID)
 	if err != nil {
@@ -207,12 +207,12 @@ func (s *DefaultPlayerSession) HandoffPlayer(playerID PlayerID, sourceCellID, ta
 		s.cellManager.RemovePlayer(targetCellID, playerID)
 		return fmt.Errorf("failed to remove player from source cell: %w", err)
 	}
-	
+
 	// Update session
 	session.CellID = targetCellID
 	session.Position = playerState.Position
 	session.LastActive = time.Now()
-	
+
 	return nil
 }
 
@@ -220,22 +220,22 @@ func (s *DefaultPlayerSession) HandoffPlayer(playerID PlayerID, sourceCellID, ta
 func (s *DefaultPlayerSession) UpdatePlayerLocation(playerID PlayerID, position WorldPosition) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	session, exists := s.sessions[playerID]
 	if !exists || !session.Active {
 		return fmt.Errorf("no active session found for player %s", playerID)
 	}
-	
+
 	// Update position in the cell manager
 	err := s.cellManager.UpdatePlayerPosition(session.CellID, playerID, position)
 	if err != nil {
 		return fmt.Errorf("failed to update player position in cell: %w", err)
 	}
-	
+
 	// Update session
 	session.Position = position
 	session.LastActive = time.Now()
-	
+
 	return nil
 }
 
@@ -243,12 +243,12 @@ func (s *DefaultPlayerSession) UpdatePlayerLocation(playerID PlayerID, position 
 func (s *DefaultPlayerSession) GetPlayerLocation(playerID PlayerID) (*WorldPosition, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	session, exists := s.sessions[playerID]
 	if !exists || !session.Active {
 		return nil, fmt.Errorf("no active session found for player %s", playerID)
 	}
-	
+
 	// Return a copy to prevent external modification
 	position := session.Position
 	return &position, nil
@@ -258,12 +258,12 @@ func (s *DefaultPlayerSession) GetPlayerLocation(playerID PlayerID) (*WorldPosit
 func (s *DefaultPlayerSession) GetPlayerCell(playerID PlayerID) (CellID, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	session, exists := s.sessions[playerID]
 	if !exists || !session.Active {
 		return "", fmt.Errorf("no active session found for player %s", playerID)
 	}
-	
+
 	return session.CellID, nil
 }
 
@@ -271,19 +271,19 @@ func (s *DefaultPlayerSession) GetPlayerCell(playerID PlayerID) (CellID, error) 
 func (s *DefaultPlayerSession) GetSessionData(playerID PlayerID) (*PlayerSessionData, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	session, exists := s.sessions[playerID]
 	if !exists {
 		return nil, fmt.Errorf("no session found for player %s", playerID)
 	}
-	
+
 	// Return a deep copy to prevent external modification
 	sessionCopy := *session
 	sessionCopy.GameData = make(map[string]interface{})
 	for k, v := range session.GameData {
 		sessionCopy.GameData[k] = v
 	}
-	
+
 	return &sessionCopy, nil
 }
 
@@ -291,19 +291,19 @@ func (s *DefaultPlayerSession) GetSessionData(playerID PlayerID) (*PlayerSession
 func (s *DefaultPlayerSession) UpdateGameData(playerID PlayerID, key string, value interface{}) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	session, exists := s.sessions[playerID]
 	if !exists || !session.Active {
 		return fmt.Errorf("no active session found for player %s", playerID)
 	}
-	
+
 	if session.GameData == nil {
 		session.GameData = make(map[string]interface{})
 	}
-	
+
 	session.GameData[key] = value
 	session.LastActive = time.Now()
-	
+
 	return nil
 }
 
@@ -311,9 +311,9 @@ func (s *DefaultPlayerSession) UpdateGameData(playerID PlayerID, key string, val
 func (s *DefaultPlayerSession) GetActiveSessions() []*PlayerSessionData {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	sessions := make([]*PlayerSessionData, 0, len(s.sessions))
-	
+
 	for _, session := range s.sessions {
 		if session.Active {
 			// Create a copy
@@ -321,7 +321,7 @@ func (s *DefaultPlayerSession) GetActiveSessions() []*PlayerSessionData {
 			sessions = append(sessions, &sessionCopy)
 		}
 	}
-	
+
 	return sessions
 }
 
@@ -329,17 +329,17 @@ func (s *DefaultPlayerSession) GetActiveSessions() []*PlayerSessionData {
 func (s *DefaultPlayerSession) CleanupInactiveSessions(maxInactiveTime time.Duration) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	now := time.Now()
 	cleaned := 0
-	
+
 	for playerID, session := range s.sessions {
 		if !session.Active && now.Sub(session.LastActive) > maxInactiveTime {
 			delete(s.sessions, playerID)
 			cleaned++
 		}
 	}
-	
+
 	return cleaned
 }
 
@@ -352,7 +352,7 @@ func generateSessionToken(playerID PlayerID) string {
 		// This should rarely happen in practice
 		return fmt.Sprintf("fallback_token_%s_%d", playerID, time.Now().UnixNano())
 	}
-	
+
 	// Convert to hex string and prefix with player ID for debugging
 	return fmt.Sprintf("tok_%s_%s", playerID, hex.EncodeToString(tokenBytes))
 }

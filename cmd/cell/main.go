@@ -33,23 +33,23 @@ func NewCellService(port int) *CellService {
 // Start starts the cell service HTTP server
 func (s *CellService) Start() error {
 	mux := http.NewServeMux()
-	
+
 	// Health check endpoint
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/ready", s.handleReady)
-	
+
 	// Cell management endpoints
 	mux.HandleFunc("/cells", s.handleCells)
 	mux.HandleFunc("/cells/", s.handleCellDetails)
-	
+
 	// Metrics endpoint
 	mux.HandleFunc("/metrics", s.handleMetrics)
-	
+
 	s.server = &http.Server{
 		Addr:    fmt.Sprintf(":%d", s.port),
 		Handler: mux,
 	}
-	
+
 	log.Printf("Starting cell service on port %d", s.port)
 	return s.server.ListenAndServe()
 }
@@ -58,19 +58,19 @@ func (s *CellService) Start() error {
 func (s *CellService) Stop() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	
+
 	if s.server != nil {
 		if err := s.server.Shutdown(ctx); err != nil {
 			return fmt.Errorf("failed to shutdown HTTP server: %w", err)
 		}
 	}
-	
+
 	if defaultManager, ok := s.manager.(*cell.DefaultCellManager); ok {
 		if err := defaultManager.Shutdown(); err != nil {
 			return fmt.Errorf("failed to shutdown cell manager: %w", err)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -80,13 +80,13 @@ func (s *CellService) handleHealth(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	
+
 	health := map[string]interface{}{
 		"status":    "healthy",
 		"timestamp": time.Now().Unix(),
 		"service":   "cell",
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(health)
 }
@@ -97,12 +97,12 @@ func (s *CellService) handleReady(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	
+
 	ready := map[string]interface{}{
 		"status":    "ready",
 		"timestamp": time.Now().Unix(),
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(ready)
 }
@@ -123,14 +123,14 @@ func (s *CellService) handleCells(w http.ResponseWriter, r *http.Request) {
 func (s *CellService) handleListCells(w http.ResponseWriter, r *http.Request) {
 	if defaultManager, ok := s.manager.(*cell.DefaultCellManager); ok {
 		cellIDs := defaultManager.ListCells()
-		
+
 		cells := make([]map[string]interface{}, 0, len(cellIDs))
-		
+
 		for _, cellID := range cellIDs {
 			cellInfo := map[string]interface{}{
 				"id": cellID,
 			}
-			
+
 			// Get additional cell information
 			if cellInstance, err := s.manager.GetCell(cellID); err == nil {
 				state := cellInstance.GetState()
@@ -139,15 +139,15 @@ func (s *CellService) handleListCells(w http.ResponseWriter, r *http.Request) {
 				cellInfo["playerCount"] = state.PlayerCount
 				cellInfo["capacity"] = state.Capacity.MaxPlayers
 			}
-			
+
 			cells = append(cells, cellInfo)
 		}
-		
+
 		response := map[string]interface{}{
 			"cells": cells,
 			"count": len(cells),
 		}
-		
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(response)
 	} else {
@@ -162,13 +162,13 @@ func (s *CellService) handleCreateCell(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid JSON body", http.StatusBadRequest)
 		return
 	}
-	
+
 	createdCell, err := s.manager.CreateCell(spec)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to create cell: %v", err), http.StatusBadRequest)
 		return
 	}
-	
+
 	// Wait for the cell to be ready, polling up to 2 seconds
 	const maxWait = 2 * time.Second
 	const pollInterval = 50 * time.Millisecond
@@ -186,16 +186,16 @@ func (s *CellService) handleCreateCell(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(pollInterval)
 		waited += pollInterval
 	}
-	
+
 	response := map[string]interface{}{
-		"id":          state.ID,
-		"phase":       state.Phase,
-		"ready":       state.Ready,
-		"boundaries":  state.Boundaries,
-		"capacity":    state.Capacity,
-		"createdAt":   state.CreatedAt,
+		"id":         state.ID,
+		"phase":      state.Phase,
+		"ready":      state.Ready,
+		"boundaries": state.Boundaries,
+		"capacity":   state.Capacity,
+		"createdAt":  state.CreatedAt,
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(response)
@@ -209,7 +209,7 @@ func (s *CellService) handleCellDetails(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "Cell ID required", http.StatusBadRequest)
 		return
 	}
-	
+
 	switch r.Method {
 	case http.MethodGet:
 		s.handleGetCell(w, r, cellID)
@@ -227,11 +227,11 @@ func (s *CellService) handleGetCell(w http.ResponseWriter, r *http.Request, cell
 		http.Error(w, "Cell not found", http.StatusNotFound)
 		return
 	}
-	
+
 	state := cellInstance.GetState()
 	health := cellInstance.GetHealth()
 	metrics := cellInstance.GetMetrics()
-	
+
 	response := map[string]interface{}{
 		"id":          state.ID,
 		"phase":       state.Phase,
@@ -245,7 +245,7 @@ func (s *CellService) handleGetCell(w http.ResponseWriter, r *http.Request, cell
 		"health":      health,
 		"metrics":     metrics,
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
@@ -257,7 +257,7 @@ func (s *CellService) handleDeleteCell(w http.ResponseWriter, r *http.Request, c
 		http.Error(w, fmt.Sprintf("Failed to delete cell: %v", err), http.StatusBadRequest)
 		return
 	}
-	
+
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -267,10 +267,10 @@ func (s *CellService) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	
+
 	if defaultManager, ok := s.manager.(*cell.DefaultCellManager); ok {
 		stats := defaultManager.GetCellStats()
-		
+
 		// Convert to Prometheus format
 		metrics := fmt.Sprintf(`# HELP fleetforge_cells_total Total number of cells
 # TYPE fleetforge_cells_total gauge
@@ -298,7 +298,7 @@ fleetforge_utilization_rate %.2f
 			stats["total_capacity"],
 			stats["utilization_rate"],
 		)
-		
+
 		w.Header().Set("Content-Type", "text/plain")
 		w.Write([]byte(metrics))
 	} else {
@@ -314,29 +314,29 @@ func main() {
 			port = p
 		}
 	}
-	
+
 	// Create and start the service
 	service := NewCellService(port)
-	
+
 	// Handle graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	
+
 	// Start service in a goroutine
 	go func() {
 		if err := service.Start(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Failed to start cell service: %v", err)
 		}
 	}()
-	
+
 	// Wait for shutdown signal
 	<-sigChan
 	log.Println("Shutting down cell service...")
-	
+
 	if err := service.Stop(); err != nil {
 		log.Printf("Error during shutdown: %v", err)
 		os.Exit(1)
 	}
-	
+
 	log.Println("Cell service stopped gracefully")
 }

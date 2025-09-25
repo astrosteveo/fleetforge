@@ -167,12 +167,12 @@ func (r *WorldSpecReconciler) reconcileCellDeployment(ctx context.Context, world
 							},
 							Resources: corev1.ResourceRequirements{
 								Limits: corev1.ResourceList{
-									corev1.ResourceCPU:    parseResourceQuantity(worldSpec.Spec.Capacity.CPULimitPerCell),
-									corev1.ResourceMemory: parseResourceQuantity(worldSpec.Spec.Capacity.MemoryLimitPerCell),
+									corev1.ResourceCPU:    r.parseResourceQuantity(worldSpec.Spec.Capacity.CPULimitPerCell, "cpu"),
+									corev1.ResourceMemory: r.parseResourceQuantity(worldSpec.Spec.Capacity.MemoryLimitPerCell, "memory"),
 								},
 								Requests: corev1.ResourceList{
-									corev1.ResourceCPU:    parseResourceQuantity(getStringValue(worldSpec.Spec.Capacity.CPURequestPerCell, "500m")),
-									corev1.ResourceMemory: parseResourceQuantity(getStringValue(worldSpec.Spec.Capacity.MemoryRequestPerCell, "1Gi")),
+									corev1.ResourceCPU:    r.parseResourceQuantity(getStringValue(worldSpec.Spec.Capacity.CPURequestPerCell, "500m"), "cpu"),
+									corev1.ResourceMemory: r.parseResourceQuantity(getStringValue(worldSpec.Spec.Capacity.MemoryRequestPerCell, "1Gi"), "memory"),
 								},
 							},
 							Ports: []corev1.ContainerPort{

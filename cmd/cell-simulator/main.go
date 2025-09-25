@@ -116,20 +116,27 @@ func startHealthServer(port int, cellSim *cell.CellSimulator, logger logr.Logger
 
 		w.Header().Set("Content-Type", "application/json")
 
-		if health == "Healthy" || health == "Near Capacity" {
+		if health.Healthy {
 			w.WriteHeader(http.StatusOK)
 		} else {
 			w.WriteHeader(http.StatusServiceUnavailable)
 		}
 
-		fmt.Fprintf(w, `{"health": "%s", "playerCount": %d}`, health, playerCount)
+		healthString := "Healthy"
+		if !health.Healthy {
+			healthString = "Unhealthy"
+		}
+
+		fmt.Fprintf(w, `{"health": "%s", "playerCount": %d}`, healthString, playerCount)
 	})
 
 	// Readiness check endpoint
 	mux.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
-		// Cell is ready if it's not overloaded
+		// Cell is ready if it's healthy and not overloaded
 		health := cellSim.GetHealth()
-		if health != "Overloaded" {
+		loadPercentage := float64(health.PlayerCount) / float64(cellSim.MaxPlayers)
+
+		if health.Healthy && loadPercentage < 0.9 {
 			w.WriteHeader(http.StatusOK)
 			fmt.Fprint(w, `{"ready": true}`)
 		} else {
@@ -141,13 +148,26 @@ func startHealthServer(port int, cellSim *cell.CellSimulator, logger logr.Logger
 	// Status endpoint with detailed information
 	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
 		status := cellSim.GetStatus()
+		boundaries := cellSim.GetBoundaries()
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 
+		yMinVal := 0.0
+		yMaxVal := 0.0
+		if boundaries.YMin != nil {
+			yMinVal = *boundaries.YMin
+		}
+		if boundaries.YMax != nil {
+			yMaxVal = *boundaries.YMax
+		}
+
+		// Use proper JSON marshaling for complex structure
 		fmt.Fprintf(w, `{
 			"id": "%s",
-			"health": "%s",
-			"currentPlayers": %d,
+			"health": "%s", 
+			"currentPlayers": %v,
+			"maxPlayers": %v,
+			"ready": %v,
 			"boundaries": {
 				"xMin": %f,
 				"xMax": %f,
@@ -155,13 +175,15 @@ func startHealthServer(port int, cellSim *cell.CellSimulator, logger logr.Logger
 				"yMax": %f
 			}
 		}`,
-			status.ID,
-			status.Health,
-			status.CurrentPlayers,
-			status.Boundaries.XMin,
-			status.Boundaries.XMax,
-			getFloatValue(status.Boundaries.YMin),
-			getFloatValue(status.Boundaries.YMax),
+			status["id"],
+			status["health"],
+			status["currentPlayers"],
+			status["maxPlayers"],
+			status["ready"],
+			boundaries.XMin,
+			boundaries.XMax,
+			yMinVal,
+			yMaxVal,
 		)
 	})
 
@@ -174,12 +196,4 @@ func startHealthServer(port int, cellSim *cell.CellSimulator, logger logr.Logger
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		logger.Error(err, "Health server failed")
 	}
-}
-
-// getFloatValue safely gets float value from pointer
-func getFloatValue(f *float64) float64 {
-	if f == nil {
-		return 0.0
-	}
-	return *f
 }

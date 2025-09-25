@@ -9,15 +9,17 @@ import (
 )
 
 func TestNewCell(t *testing.T) {
+	yMin := 0.0
+	yMax := 1000.0
 	spec := CellSpec{
 		ID: "test-cell-1",
-		Boundaries: v1.WorldBoundaries{
+		Boundaries: v1.WorldBounds{
 			XMin: 0, XMax: 1000,
-			YMin: 0, YMax: 1000,
+			YMin: &yMin, YMax: &yMax,
 		},
 		Capacity: CellCapacity{
-			MaxPlayers: 50,
-			CPULimit:   "500m",
+			MaxPlayers:  50,
+			CPULimit:    "500m",
 			MemoryLimit: "1Gi",
 		},
 	}
@@ -43,7 +45,7 @@ func TestNewCell(t *testing.T) {
 func TestNewCell_EmptyID(t *testing.T) {
 	spec := CellSpec{
 		ID: "",
-		Boundaries: v1.WorldBoundaries{
+		Boundaries: v1.WorldBounds{
 			XMin: 0, XMax: 1000,
 			YMin: 0, YMax: 1000,
 		},
@@ -58,7 +60,7 @@ func TestNewCell_EmptyID(t *testing.T) {
 func TestCell_StartStop(t *testing.T) {
 	spec := CellSpec{
 		ID: "test-cell-2",
-		Boundaries: v1.WorldBoundaries{
+		Boundaries: v1.WorldBounds{
 			XMin: 0, XMax: 1000,
 			YMin: 0, YMax: 1000,
 		},
@@ -102,7 +104,7 @@ func TestCell_StartStop(t *testing.T) {
 func TestCell_AddPlayer(t *testing.T) {
 	spec := CellSpec{
 		ID: "test-cell-3",
-		Boundaries: v1.WorldBoundaries{
+		Boundaries: v1.WorldBounds{
 			XMin: 0, XMax: 1000,
 			YMin: 0, YMax: 1000,
 		},
@@ -124,8 +126,8 @@ func TestCell_AddPlayer(t *testing.T) {
 	time.Sleep(time.Millisecond * 150)
 
 	player := &PlayerState{
-		ID:       "player-1",
-		Position: WorldPosition{X: 500, Y: 500},
+		ID:        "player-1",
+		Position:  WorldPosition{X: 500, Y: 500},
 		Connected: true,
 	}
 
@@ -149,7 +151,7 @@ func TestCell_AddPlayer(t *testing.T) {
 func TestCell_AddPlayer_OutOfBounds(t *testing.T) {
 	spec := CellSpec{
 		ID: "test-cell-4",
-		Boundaries: v1.WorldBoundaries{
+		Boundaries: v1.WorldBounds{
 			XMin: 0, XMax: 1000,
 			YMin: 0, YMax: 1000,
 		},
@@ -171,8 +173,8 @@ func TestCell_AddPlayer_OutOfBounds(t *testing.T) {
 	time.Sleep(time.Millisecond * 150)
 
 	player := &PlayerState{
-		ID:       "player-1",
-		Position: WorldPosition{X: 1500, Y: 500}, // Outside boundaries
+		ID:        "player-1",
+		Position:  WorldPosition{X: 1500, Y: 500}, // Outside boundaries
 		Connected: true,
 	}
 
@@ -187,7 +189,7 @@ func TestCell_AddPlayer_OutOfBounds(t *testing.T) {
 func TestCell_AddPlayer_AtCapacity(t *testing.T) {
 	spec := CellSpec{
 		ID: "test-cell-5",
-		Boundaries: v1.WorldBoundaries{
+		Boundaries: v1.WorldBounds{
 			XMin: 0, XMax: 1000,
 			YMin: 0, YMax: 1000,
 		},
@@ -210,8 +212,8 @@ func TestCell_AddPlayer_AtCapacity(t *testing.T) {
 
 	// Add first player
 	player1 := &PlayerState{
-		ID:       "player-1",
-		Position: WorldPosition{X: 500, Y: 500},
+		ID:        "player-1",
+		Position:  WorldPosition{X: 500, Y: 500},
 		Connected: true,
 	}
 
@@ -222,8 +224,8 @@ func TestCell_AddPlayer_AtCapacity(t *testing.T) {
 
 	// Try to add second player (should fail)
 	player2 := &PlayerState{
-		ID:       "player-2",
-		Position: WorldPosition{X: 600, Y: 600},
+		ID:        "player-2",
+		Position:  WorldPosition{X: 600, Y: 600},
 		Connected: true,
 	}
 
@@ -238,7 +240,7 @@ func TestCell_AddPlayer_AtCapacity(t *testing.T) {
 func TestCell_RemovePlayer(t *testing.T) {
 	spec := CellSpec{
 		ID: "test-cell-6",
-		Boundaries: v1.WorldBoundaries{
+		Boundaries: v1.WorldBounds{
 			XMin: 0, XMax: 1000,
 			YMin: 0, YMax: 1000,
 		},
@@ -260,8 +262,8 @@ func TestCell_RemovePlayer(t *testing.T) {
 	time.Sleep(time.Millisecond * 150)
 
 	player := &PlayerState{
-		ID:       "player-1",
-		Position: WorldPosition{X: 500, Y: 500},
+		ID:        "player-1",
+		Position:  WorldPosition{X: 500, Y: 500},
 		Connected: true,
 	}
 
@@ -290,7 +292,7 @@ func TestCell_RemovePlayer(t *testing.T) {
 func TestCell_UpdatePlayerPosition(t *testing.T) {
 	spec := CellSpec{
 		ID: "test-cell-7",
-		Boundaries: v1.WorldBoundaries{
+		Boundaries: v1.WorldBounds{
 			XMin: 0, XMax: 1000,
 			YMin: 0, YMax: 1000,
 		},
@@ -312,8 +314,8 @@ func TestCell_UpdatePlayerPosition(t *testing.T) {
 	time.Sleep(time.Millisecond * 150)
 
 	player := &PlayerState{
-		ID:       "player-1",
-		Position: WorldPosition{X: 500, Y: 500},
+		ID:        "player-1",
+		Position:  WorldPosition{X: 500, Y: 500},
 		Connected: true,
 	}
 
@@ -340,7 +342,7 @@ func TestCell_UpdatePlayerPosition(t *testing.T) {
 func TestCell_GetPlayersInArea(t *testing.T) {
 	spec := CellSpec{
 		ID: "test-cell-8",
-		Boundaries: v1.WorldBoundaries{
+		Boundaries: v1.WorldBounds{
 			XMin: 0, XMax: 1000,
 			YMin: 0, YMax: 1000,
 		},
@@ -390,7 +392,7 @@ func TestCell_GetPlayersInArea(t *testing.T) {
 func TestCell_Health(t *testing.T) {
 	spec := CellSpec{
 		ID: "test-cell-9",
-		Boundaries: v1.WorldBoundaries{
+		Boundaries: v1.WorldBounds{
 			XMin: 0, XMax: 1000,
 			YMin: 0, YMax: 1000,
 		},
@@ -430,7 +432,7 @@ func TestCell_Health(t *testing.T) {
 func TestCell_Metrics(t *testing.T) {
 	spec := CellSpec{
 		ID: "test-cell-10",
-		Boundaries: v1.WorldBoundaries{
+		Boundaries: v1.WorldBounds{
 			XMin: 0, XMax: 1000,
 			YMin: 0, YMax: 1000,
 		},
@@ -471,7 +473,7 @@ func TestCell_Metrics(t *testing.T) {
 func TestCell_CheckpointRestore(t *testing.T) {
 	spec := CellSpec{
 		ID: "test-cell-11",
-		Boundaries: v1.WorldBoundaries{
+		Boundaries: v1.WorldBounds{
 			XMin: 0, XMax: 1000,
 			YMin: 0, YMax: 1000,
 		},
@@ -494,8 +496,8 @@ func TestCell_CheckpointRestore(t *testing.T) {
 
 	// Add a player
 	player := &PlayerState{
-		ID:       "player-1",
-		Position: WorldPosition{X: 500, Y: 500},
+		ID:        "player-1",
+		Position:  WorldPosition{X: 500, Y: 500},
 		Connected: true,
 	}
 

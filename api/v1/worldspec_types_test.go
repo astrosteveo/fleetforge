@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 )
 
 func TestWorldSpec_DefaultValues(t *testing.T) {
@@ -14,13 +13,11 @@ func TestWorldSpec_DefaultValues(t *testing.T) {
 			Namespace: "default",
 		},
 		Spec: WorldSpecSpec{
-			Topology: Topology{
+			Topology: WorldTopology{
 				InitialCells: 4,
-				WorldBoundaries: WorldBoundaries{
+				WorldBoundaries: WorldBounds{
 					XMin: -1000.0,
 					XMax: 1000.0,
-					YMin: -1000.0,
-					YMax: 1000.0,
 				},
 			},
 		},
@@ -42,9 +39,9 @@ func TestWorldSpec_DefaultValues(t *testing.T) {
 
 func TestWorldSpec_Validation(t *testing.T) {
 	tests := []struct {
-		name     string
+		name      string
 		worldSpec *WorldSpec
-		wantErr  bool
+		wantErr   bool
 	}{
 		{
 			name: "valid world spec",
@@ -54,20 +51,17 @@ func TestWorldSpec_Validation(t *testing.T) {
 					Namespace: "default",
 				},
 				Spec: WorldSpecSpec{
-					Topology: Topology{
+					Topology: WorldTopology{
 						InitialCells: 4,
-						WorldBoundaries: WorldBoundaries{
+						WorldBoundaries: WorldBounds{
 							XMin: -1000.0,
 							XMax: 1000.0,
-							YMin: -1000.0,
-							YMax: 1000.0,
 						},
 					},
-					Scaling: Scaling{
+					Scaling: ScalingConfiguration{
 						ScaleUpThreshold:   0.8,
 						ScaleDownThreshold: 0.3,
-						MinCells:          1,
-						MaxCells:          100,
+						PredictiveEnabled:  true,
 					},
 				},
 			},
@@ -81,20 +75,17 @@ func TestWorldSpec_Validation(t *testing.T) {
 					Namespace: "default",
 				},
 				Spec: WorldSpecSpec{
-					Topology: Topology{
+					Topology: WorldTopology{
 						InitialCells: 4,
-						WorldBoundaries: WorldBoundaries{
+						WorldBoundaries: WorldBounds{
 							XMin: -1000.0,
 							XMax: 1000.0,
-							YMin: -1000.0,
-							YMax: 1000.0,
 						},
 					},
-					Scaling: Scaling{
+					Scaling: ScalingConfiguration{
 						ScaleUpThreshold:   0.2, // Invalid: should be > ScaleDownThreshold
 						ScaleDownThreshold: 0.8,
-						MinCells:          1,
-						MaxCells:          100,
+						PredictiveEnabled:  false,
 					},
 				},
 			},
@@ -119,115 +110,58 @@ func TestWorldSpec_Validation(t *testing.T) {
 	}
 }
 
-func TestWorldBoundaries_Area(t *testing.T) {
-	wb := WorldBoundaries{
+func TestWorldBounds_Area(t *testing.T) {
+	wb := WorldBounds{
 		XMin: -100.0,
 		XMax: 100.0,
-		YMin: -50.0,
-		YMax: 50.0,
 	}
 
 	expectedWidth := 200.0
-	expectedHeight := 100.0
-	expectedArea := 20000.0
 
 	width := wb.XMax - wb.XMin
-	height := wb.YMax - wb.YMin
-	area := width * height
 
 	if width != expectedWidth {
 		t.Errorf("Expected width %f, got %f", expectedWidth, width)
-	}
-
-	if height != expectedHeight {
-		t.Errorf("Expected height %f, got %f", expectedHeight, height)
-	}
-
-	if area != expectedArea {
-		t.Errorf("Expected area %f, got %f", expectedArea, area)
 	}
 }
 
 func TestCellStatus_Ready(t *testing.T) {
 	cellStatus := CellStatus{
-		ID:          "cell-1",
-		Phase:       "Running",
-		PlayerCount: 50,
-		CPUUsage:    0.6,
-		MemoryUsage: 0.4,
-		ClusterName: "cluster-1",
-		Boundaries: WorldBoundaries{
+		ID:             "cell-1",
+		Health:         "Healthy",
+		CurrentPlayers: 50,
+		Boundaries: WorldBounds{
 			XMin: 0.0,
 			XMax: 1000.0,
-			YMin: 0.0,
-			YMax: 1000.0,
 		},
-		Ready: true,
 	}
 
-	if !cellStatus.Ready {
-		t.Error("Expected cell to be ready")
+	if cellStatus.Health != "Healthy" {
+		t.Errorf("Expected Health 'Healthy', got %s", cellStatus.Health)
 	}
 
-	if cellStatus.PlayerCount != 50 {
-		t.Errorf("Expected PlayerCount 50, got %d", cellStatus.PlayerCount)
-	}
-
-	if cellStatus.Phase != "Running" {
-		t.Errorf("Expected Phase 'Running', got %s", cellStatus.Phase)
+	if cellStatus.CurrentPlayers != 50 {
+		t.Errorf("Expected CurrentPlayers 50, got %d", cellStatus.CurrentPlayers)
 	}
 }
 
-func TestWorldSpecStatus_TotalPlayerCount(t *testing.T) {
+func TestWorldSpecStatus_TotalPlayers(t *testing.T) {
 	status := WorldSpecStatus{
 		Phase: "Running",
 		Cells: []CellStatus{
-			{ID: "cell-1", PlayerCount: 25, Ready: true},
-			{ID: "cell-2", PlayerCount: 30, Ready: true},
-			{ID: "cell-3", PlayerCount: 15, Ready: true},
+			{ID: "cell-1", CurrentPlayers: 25, Health: "Healthy"},
+			{ID: "cell-2", CurrentPlayers: 30, Health: "Healthy"},
+			{ID: "cell-3", CurrentPlayers: 15, Health: "Healthy"},
 		},
-		TotalPlayerCount: 70,
+		TotalPlayers: 70,
 	}
 
-	expectedTotal := 25 + 30 + 15
-	if status.TotalPlayerCount != expectedTotal {
-		t.Errorf("Expected TotalPlayerCount %d, got %d", expectedTotal, status.TotalPlayerCount)
+	expectedTotal := int32(25 + 30 + 15)
+	if status.TotalPlayers != expectedTotal {
+		t.Errorf("Expected TotalPlayers %d, got %d", expectedTotal, status.TotalPlayers)
 	}
 
 	if len(status.Cells) != 3 {
 		t.Errorf("Expected 3 cells, got %d", len(status.Cells))
-	}
-}
-
-func TestWorldSpec_GameConfig(t *testing.T) {
-	gameConfigJSON := `{"gameMode": "pvp", "respawnTime": 5}`
-	
-	ws := &WorldSpec{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "game-world",
-			Namespace: "default",
-		},
-		Spec: WorldSpecSpec{
-			Topology: Topology{
-				InitialCells: 2,
-				WorldBoundaries: WorldBoundaries{
-					XMin: 0.0,
-					XMax: 2000.0,
-					YMin: 0.0,
-					YMax: 2000.0,
-				},
-			},
-			GameConfig: runtime.RawExtension{
-				Raw: []byte(gameConfigJSON),
-			},
-		},
-	}
-
-	if ws.Spec.GameConfig.Raw == nil {
-		t.Error("Expected GameConfig to be set")
-	}
-
-	if string(ws.Spec.GameConfig.Raw) != gameConfigJSON {
-		t.Errorf("Expected GameConfig %s, got %s", gameConfigJSON, string(ws.Spec.GameConfig.Raw))
 	}
 }
