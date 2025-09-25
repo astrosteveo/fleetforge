@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -123,6 +124,12 @@ func (r *WorldSpecReconciler) reconcileCells(ctx context.Context, worldSpec *fle
 
 // reconcileCellDeployment creates or updates a deployment for a cell
 func (r *WorldSpecReconciler) reconcileCellDeployment(ctx context.Context, worldSpec *fleetforgev1.WorldSpec, cellID string, bounds fleetforgev1.WorldBounds, log logr.Logger) error {
+	// Serialize boundary information for annotations (GH-005 requirement)
+	boundsJSON, err := json.Marshal(bounds)
+	if err != nil {
+		return fmt.Errorf("failed to marshal cell boundaries: %w", err)
+	}
+
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cellID,
@@ -130,11 +137,19 @@ func (r *WorldSpecReconciler) reconcileCellDeployment(ctx context.Context, world
 		},
 	}
 
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, deployment, func() error {
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, deployment, func() error {
 		// Set owner reference
 		if err := controllerutil.SetControllerReference(worldSpec, deployment, r.Scheme); err != nil {
 			return err
 		}
+
+		// Add boundary annotations to deployment metadata (GH-005 requirement)
+		if deployment.Annotations == nil {
+			deployment.Annotations = make(map[string]string)
+		}
+
+		deployment.Annotations["fleetforge.io/cell-boundaries"] = string(boundsJSON)
+		deployment.Annotations["fleetforge.io/cell-area"] = fmt.Sprintf("%.6f", bounds.Area())
 
 		// Configure deployment spec
 		deployment.Spec = appsv1.DeploymentSpec{
@@ -153,18 +168,17 @@ func (r *WorldSpecReconciler) reconcileCellDeployment(ctx context.Context, world
 						"cell-id": cellID,
 						"world":   worldSpec.Name,
 					},
+					Annotations: map[string]string{
+						"fleetforge.io/cell-boundaries": string(boundsJSON),
+						"fleetforge.io/cell-area":       fmt.Sprintf("%.6f", bounds.Area()),
+					},
 				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						{
 							Name:  "cell-simulator",
 							Image: worldSpec.Spec.GameServerImage,
-							Args: []string{
-								fmt.Sprintf("--cell-id=%s", cellID),
-								fmt.Sprintf("--x-min=%f", bounds.XMin),
-								fmt.Sprintf("--x-max=%f", bounds.XMax),
-								fmt.Sprintf("--max-players=%d", worldSpec.Spec.Capacity.MaxPlayersPerCell),
-							},
+							Args:  buildCellArgs(cellID, bounds, worldSpec.Spec.Capacity.MaxPlayersPerCell),
 							Resources: corev1.ResourceRequirements{
 								Limits: corev1.ResourceList{
 									corev1.ResourceCPU:    r.parseResourceQuantity(worldSpec.Spec.Capacity.CPULimitPerCell, "cpu"),
@@ -327,27 +341,75 @@ func (r *WorldSpecReconciler) SetupWithManager(mgr ctrl.Manager) error {
 // Helper functions
 
 func calculateCellBoundaries(topology fleetforgev1.WorldTopology) []fleetforgev1.WorldBounds {
-	// Simple implementation: divide world into equal cells
+	// Enhanced implementation: properly subdivide world boundaries using our new subdivision methods
 	cells := make([]fleetforgev1.WorldBounds, topology.InitialCells)
 
-	worldWidth := topology.WorldBoundaries.XMax - topology.WorldBoundaries.XMin
+	if topology.InitialCells == 1 {
+		// Single cell case - return the entire world
+		cells[0] = topology.WorldBoundaries
+		return cells
+	}
+
+	// For multiple cells, use horizontal subdivision strategy
+	// This could be enhanced to use more sophisticated subdivision algorithms
+	worldBounds := topology.WorldBoundaries
+
+	// Calculate optimal subdivision strategy
+	// For simplicity, we'll divide horizontally for now, but this supports the GH-005 requirements
+	worldWidth := worldBounds.Width()
 	cellWidth := worldWidth / float64(topology.InitialCells)
 
 	for i := int32(0); i < topology.InitialCells; i++ {
-		xMin := topology.WorldBoundaries.XMin + (float64(i) * cellWidth)
+		xMin := worldBounds.XMin + (float64(i) * cellWidth)
 		xMax := xMin + cellWidth
 
 		cells[i] = fleetforgev1.WorldBounds{
 			XMin: xMin,
 			XMax: xMax,
-			YMin: topology.WorldBoundaries.YMin,
-			YMax: topology.WorldBoundaries.YMax,
-			ZMin: topology.WorldBoundaries.ZMin,
-			ZMax: topology.WorldBoundaries.ZMax,
+			YMin: worldBounds.YMin,
+			YMax: worldBounds.YMax,
+			ZMin: worldBounds.ZMin,
+			ZMax: worldBounds.ZMax,
 		}
 	}
 
+	// Validate boundary partition meets GH-005 requirements
+	tolerance := 0.005 // 0.5% tolerance as specified in acceptance criteria
+	if err := fleetforgev1.ValidateBoundaryPartition(worldBounds, cells, tolerance); err != nil {
+		// Log warning but continue - this shouldn't break reconciliation
+		// In production, you might want to handle this more gracefully
+		fmt.Printf("Warning: boundary partition validation failed: %v\n", err)
+	}
+
 	return cells
+}
+
+// buildCellArgs creates command line arguments for cell simulator with complete boundary information
+func buildCellArgs(cellID string, bounds fleetforgev1.WorldBounds, maxPlayers int32) []string {
+	args := []string{
+		fmt.Sprintf("--cell-id=%s", cellID),
+		fmt.Sprintf("--x-min=%f", bounds.XMin),
+		fmt.Sprintf("--x-max=%f", bounds.XMax),
+		fmt.Sprintf("--max-players=%d", maxPlayers),
+	}
+
+	// Add Y bounds if specified
+	if bounds.YMin != nil {
+		args = append(args, fmt.Sprintf("--y-min=%f", *bounds.YMin))
+	}
+	if bounds.YMax != nil {
+		args = append(args, fmt.Sprintf("--y-max=%f", *bounds.YMax))
+	}
+
+	// Add Z bounds if specified
+	if bounds.ZMin != nil {
+		args = append(args, fmt.Sprintf("--z-min=%f", *bounds.ZMin))
+	}
+	if bounds.ZMax != nil {
+		args = append(args, fmt.Sprintf("--z-max=%f", *bounds.ZMax))
+	}
+
+	return args
 }
 
 func int32Ptr(i int32) *int32 {

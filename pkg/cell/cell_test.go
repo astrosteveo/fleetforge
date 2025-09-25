@@ -8,6 +8,11 @@ import (
 	"github.com/astrosteveo/fleetforge/api/v1"
 )
 
+// Helper function to create a pointer to float64
+func float64Ptr(f float64) *float64 {
+	return &f
+}
+
 func TestNewCell(t *testing.T) {
 	yMin := 0.0
 	yMax := 1000.0
@@ -47,7 +52,8 @@ func TestNewCell_EmptyID(t *testing.T) {
 		ID: "",
 		Boundaries: v1.WorldBounds{
 			XMin: 0, XMax: 1000,
-			YMin: 0, YMax: 1000,
+			YMin: func() *float64 { f := 0.0; return &f }(),
+			YMax: func() *float64 { f := 1000.0; return &f }(),
 		},
 	}
 
@@ -62,7 +68,8 @@ func TestCell_StartStop(t *testing.T) {
 		ID: "test-cell-2",
 		Boundaries: v1.WorldBounds{
 			XMin: 0, XMax: 1000,
-			YMin: 0, YMax: 1000,
+			YMin: func() *float64 { f := 0.0; return &f }(),
+			YMax: func() *float64 { f := 1000.0; return &f }(),
 		},
 		Capacity: CellCapacity{MaxPlayers: 10},
 	}
@@ -106,7 +113,7 @@ func TestCell_AddPlayer(t *testing.T) {
 		ID: "test-cell-3",
 		Boundaries: v1.WorldBounds{
 			XMin: 0, XMax: 1000,
-			YMin: 0, YMax: 1000,
+			YMin: float64Ptr(0), YMax: float64Ptr(1000),
 		},
 		Capacity: CellCapacity{MaxPlayers: 10},
 	}
@@ -153,7 +160,7 @@ func TestCell_AddPlayer_OutOfBounds(t *testing.T) {
 		ID: "test-cell-4",
 		Boundaries: v1.WorldBounds{
 			XMin: 0, XMax: 1000,
-			YMin: 0, YMax: 1000,
+			YMin: float64Ptr(0), YMax: float64Ptr(1000),
 		},
 		Capacity: CellCapacity{MaxPlayers: 10},
 	}
@@ -191,7 +198,7 @@ func TestCell_AddPlayer_AtCapacity(t *testing.T) {
 		ID: "test-cell-5",
 		Boundaries: v1.WorldBounds{
 			XMin: 0, XMax: 1000,
-			YMin: 0, YMax: 1000,
+			YMin: float64Ptr(0), YMax: float64Ptr(1000),
 		},
 		Capacity: CellCapacity{MaxPlayers: 1},
 	}
@@ -242,7 +249,7 @@ func TestCell_RemovePlayer(t *testing.T) {
 		ID: "test-cell-6",
 		Boundaries: v1.WorldBounds{
 			XMin: 0, XMax: 1000,
-			YMin: 0, YMax: 1000,
+			YMin: float64Ptr(0), YMax: float64Ptr(1000),
 		},
 		Capacity: CellCapacity{MaxPlayers: 10},
 	}
@@ -294,7 +301,7 @@ func TestCell_UpdatePlayerPosition(t *testing.T) {
 		ID: "test-cell-7",
 		Boundaries: v1.WorldBounds{
 			XMin: 0, XMax: 1000,
-			YMin: 0, YMax: 1000,
+			YMin: float64Ptr(0), YMax: float64Ptr(1000),
 		},
 		Capacity: CellCapacity{MaxPlayers: 10},
 	}
@@ -344,7 +351,7 @@ func TestCell_GetPlayersInArea(t *testing.T) {
 		ID: "test-cell-8",
 		Boundaries: v1.WorldBounds{
 			XMin: 0, XMax: 1000,
-			YMin: 0, YMax: 1000,
+			YMin: float64Ptr(0), YMax: float64Ptr(1000),
 		},
 		Capacity: CellCapacity{MaxPlayers: 10},
 	}
@@ -394,7 +401,7 @@ func TestCell_Health(t *testing.T) {
 		ID: "test-cell-9",
 		Boundaries: v1.WorldBounds{
 			XMin: 0, XMax: 1000,
-			YMin: 0, YMax: 1000,
+			YMin: float64Ptr(0), YMax: float64Ptr(1000),
 		},
 		Capacity: CellCapacity{MaxPlayers: 10},
 	}
@@ -434,7 +441,7 @@ func TestCell_Metrics(t *testing.T) {
 		ID: "test-cell-10",
 		Boundaries: v1.WorldBounds{
 			XMin: 0, XMax: 1000,
-			YMin: 0, YMax: 1000,
+			YMin: float64Ptr(0), YMax: float64Ptr(1000),
 		},
 		Capacity: CellCapacity{MaxPlayers: 10},
 	}
@@ -475,7 +482,7 @@ func TestCell_CheckpointRestore(t *testing.T) {
 		ID: "test-cell-11",
 		Boundaries: v1.WorldBounds{
 			XMin: 0, XMax: 1000,
-			YMin: 0, YMax: 1000,
+			YMin: float64Ptr(0), YMax: float64Ptr(1000),
 		},
 		Capacity: CellCapacity{MaxPlayers: 10},
 	}

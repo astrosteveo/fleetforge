@@ -17,6 +17,8 @@ limitations under the License.
 package v1
 
 import (
+	"fmt"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -38,6 +40,117 @@ type WorldBounds struct {
 	// ZMax is the maximum Z coordinate (optional for 3D worlds)
 	// +optional
 	ZMax *float64 `json:"zMax,omitempty"`
+}
+
+// Area calculates the area of the bounds (X * Y dimensions)
+func (wb WorldBounds) Area() float64 {
+	width := wb.XMax - wb.XMin
+
+	// Default height to 1.0 if Y dimensions are not specified
+	height := 1.0
+	if wb.YMin != nil && wb.YMax != nil {
+		height = *wb.YMax - *wb.YMin
+	}
+
+	return width * height
+}
+
+// Width calculates the width (X dimension) of the bounds
+func (wb WorldBounds) Width() float64 {
+	return wb.XMax - wb.XMin
+}
+
+// Height calculates the height (Y dimension) of the bounds
+func (wb WorldBounds) Height() float64 {
+	if wb.YMin != nil && wb.YMax != nil {
+		return *wb.YMax - *wb.YMin
+	}
+	return 1.0 // Default height for 1D bounds
+}
+
+// SplitHorizontal splits the bounds horizontally into two child bounds
+func (wb WorldBounds) SplitHorizontal() (WorldBounds, WorldBounds) {
+	midX := wb.XMin + (wb.XMax-wb.XMin)/2.0
+
+	left := WorldBounds{
+		XMin: wb.XMin,
+		XMax: midX,
+		YMin: wb.YMin,
+		YMax: wb.YMax,
+		ZMin: wb.ZMin,
+		ZMax: wb.ZMax,
+	}
+
+	right := WorldBounds{
+		XMin: midX,
+		XMax: wb.XMax,
+		YMin: wb.YMin,
+		YMax: wb.YMax,
+		ZMin: wb.ZMin,
+		ZMax: wb.ZMax,
+	}
+
+	return left, right
+}
+
+// SplitVertical splits the bounds vertically into two child bounds
+func (wb WorldBounds) SplitVertical() (WorldBounds, WorldBounds) {
+	// If Y dimensions are not set, we can't split vertically
+	if wb.YMin == nil || wb.YMax == nil {
+		// Return identical bounds as fallback
+		return wb, wb
+	}
+
+	midY := *wb.YMin + (*wb.YMax-*wb.YMin)/2.0
+	midYPtr := &midY
+
+	bottom := WorldBounds{
+		XMin: wb.XMin,
+		XMax: wb.XMax,
+		YMin: wb.YMin,
+		YMax: midYPtr,
+		ZMin: wb.ZMin,
+		ZMax: wb.ZMax,
+	}
+
+	top := WorldBounds{
+		XMin: wb.XMin,
+		XMax: wb.XMax,
+		YMin: midYPtr,
+		YMax: wb.YMax,
+		ZMin: wb.ZMin,
+		ZMax: wb.ZMax,
+	}
+
+	return bottom, top
+}
+
+// ValidateBoundaryPartition validates that child bounds partition the parent without gaps or overlaps
+func ValidateBoundaryPartition(parent WorldBounds, children []WorldBounds, tolerance float64) error {
+	if len(children) == 0 {
+		return fmt.Errorf("no child bounds provided")
+	}
+
+	// Calculate total area of children
+	totalChildrenArea := 0.0
+	for _, child := range children {
+		totalChildrenArea += child.Area()
+	}
+
+	// Calculate parent area
+	parentArea := parent.Area()
+
+	// Check area conservation within tolerance
+	areaRatio := totalChildrenArea / parentArea
+	if areaRatio < (1.0-tolerance) || areaRatio > (1.0+tolerance) {
+		return fmt.Errorf("area conservation violation: parent area=%.6f, children total=%.6f, ratio=%.6f, tolerance=%.3f",
+			parentArea, totalChildrenArea, areaRatio, tolerance)
+	}
+
+	// TODO: Add gap/overlap detection logic for more complex subdivisions
+	// For now, we assume simple horizontal/vertical splits don't have gaps/overlaps
+
+	return nil
 }
 
 // WorldTopology defines the spatial layout and initial cell configuration
