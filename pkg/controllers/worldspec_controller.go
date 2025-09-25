@@ -34,13 +34,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	fleetforgev1 "github.com/astrosteveo/fleetforge/api/v1"
+	"github.com/astrosteveo/fleetforge/pkg/cell"
 )
 
 // WorldSpecReconciler reconciles a WorldSpec object
 type WorldSpecReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
-	Log    logr.Logger
+	Scheme      *runtime.Scheme
+	Log         logr.Logger
+	CellManager cell.CellManager
 }
 
 //+kubebuilder:rbac:groups=fleetforge.io,resources=worldspecs,verbs=get;list;watch;create;update;patch;delete
@@ -90,12 +92,17 @@ func (r *WorldSpecReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return result, err
 	}
 
+	// Check for automatic scaling needs
+	if err := r.checkAndHandleScaling(ctx, worldSpec, log); err != nil {
+		log.Error(err, "Failed to handle automatic scaling")
+	}
+
 	// Update the status based on current state
 	if err := r.updateWorldSpecStatus(ctx, worldSpec, log); err != nil {
 		return ctrl.Result{}, err
 	}
 
-	// Requeue for status updates
+	// Requeue for status updates and scaling checks
 	return ctrl.Result{RequeueAfter: time.Minute * 1}, nil
 }
 
@@ -378,4 +385,105 @@ func (r *WorldSpecReconciler) parseResourceQuantity(s string, resourceType strin
 		return resource.MustParse(defaultVal)
 	}
 	return qty
+}
+
+// checkAndHandleScaling monitors cell load and triggers splits when thresholds are exceeded
+func (r *WorldSpecReconciler) checkAndHandleScaling(ctx context.Context, worldSpec *fleetforgev1.WorldSpec, log logr.Logger) error {
+	// Skip scaling checks if CellManager is not initialized
+	if r.CellManager == nil {
+		log.V(1).Info("CellManager not initialized, skipping scaling checks")
+		return nil
+	}
+
+	// Get all cell deployments for this world
+	deploymentList := &appsv1.DeploymentList{}
+	err := r.List(ctx, deploymentList, client.InNamespace(worldSpec.Namespace), client.MatchingLabels{"world": worldSpec.Name})
+	if err != nil {
+		return fmt.Errorf("failed to list cell deployments: %w", err)
+	}
+
+	scaleUpThreshold := worldSpec.Spec.Scaling.ScaleUpThreshold
+
+	for _, deployment := range deploymentList.Items {
+		// Skip if deployment is not ready
+		if deployment.Status.ReadyReplicas == 0 {
+			continue
+		}
+
+		// Extract cell ID from deployment name
+		cellID := cell.CellID(deployment.Name)
+
+		// Check if this cell should be split
+		shouldSplit, err := r.CellManager.ShouldSplit(cellID, scaleUpThreshold)
+		if err != nil {
+			log.Error(err, "Failed to check if cell should split", "cellID", cellID)
+			continue
+		}
+
+		if shouldSplit {
+			log.Info("Cell threshold exceeded, triggering split", "cellID", cellID, "threshold", scaleUpThreshold)
+
+			// Trigger cell split
+			splitResult, err := r.CellManager.SplitCell(cellID)
+			if err != nil {
+				log.Error(err, "Failed to split cell", "cellID", cellID)
+				continue
+			}
+
+			if splitResult.Success {
+				log.Info("Cell split completed successfully",
+					"parentCellID", splitResult.ParentCellID,
+					"childCellIDs", splitResult.ChildCellIDs,
+					"duration", splitResult.SplitDuration,
+					"playersRedistributed", splitResult.PlayersRedistributed)
+
+				// Create Kubernetes events for the split
+				if err := r.emitCellSplitEvents(ctx, worldSpec, splitResult, log); err != nil {
+					log.Error(err, "Failed to emit Kubernetes events for cell split")
+				}
+
+				// Update world spec status to reflect the split
+				worldSpec.Status.ActiveCells += int32(len(splitResult.ChildCellIDs) - 1) // -1 because parent is replaced
+			}
+		}
+	}
+
+	return nil
+}
+
+// emitCellSplitEvents creates Kubernetes events for cell split operations
+func (r *WorldSpecReconciler) emitCellSplitEvents(ctx context.Context, worldSpec *fleetforgev1.WorldSpec, splitResult *cell.CellSplitResult, log logr.Logger) error {
+	eventTime := metav1.NewTime(splitResult.SplitEndTime)
+
+	// Create CellSplit event
+	splitEvent := &corev1.Event{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      fmt.Sprintf("cellsplit-%s-%d", splitResult.ParentCellID, splitResult.SplitEndTime.Unix()),
+			Namespace: worldSpec.Namespace,
+		},
+		InvolvedObject: corev1.ObjectReference{
+			APIVersion: worldSpec.APIVersion,
+			Kind:       worldSpec.Kind,
+			Name:       worldSpec.Name,
+			Namespace:  worldSpec.Namespace,
+			UID:        worldSpec.UID,
+		},
+		Reason: "CellSplit",
+		Message: fmt.Sprintf("Cell %s split into %v (duration: %v, players redistributed: %d)",
+			splitResult.ParentCellID, splitResult.ChildCellIDs, splitResult.SplitDuration, splitResult.PlayersRedistributed),
+		Type:                "Normal",
+		FirstTimestamp:      eventTime,
+		LastTimestamp:       eventTime,
+		EventTime:           metav1.NewMicroTime(splitResult.SplitEndTime),
+		ReportingController: "fleetforge-controller",
+		ReportingInstance:   "fleetforge-controller-manager",
+		Action:              "CellSplit",
+	}
+
+	if err := r.Create(ctx, splitEvent); err != nil {
+		return fmt.Errorf("failed to create CellSplit event: %w", err)
+	}
+
+	log.Info("Created CellSplit event", "eventName", splitEvent.Name)
+	return nil
 }

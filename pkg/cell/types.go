@@ -115,6 +115,14 @@ type CellManager interface {
 	// State management
 	Checkpoint(cellID CellID) error
 	Restore(cellID CellID, checkpoint []byte) error
+
+	// Scaling operations
+	SplitCell(parentCellID CellID) (*CellSplitResult, error)
+	MergeCell(cellIDs []CellID) error
+
+	// Load monitoring
+	ShouldSplit(cellID CellID, threshold float64) (bool, error)
+	GetLoadMetrics(cellID CellID) (*CellLoadMetrics, error)
 }
 
 // PlayerSession interface defines player session management
@@ -152,4 +160,40 @@ type CellMetrics struct {
 	// State metrics
 	LastCheckpoint time.Time `json:"lastCheckpoint"`
 	StateSize      int64     `json:"stateSize"`
+}
+
+// CellLoadMetrics defines load-specific metrics for scaling decisions
+type CellLoadMetrics struct {
+	PlayerDensity     float64   `json:"playerDensity"`     // Players per unit area
+	PlayerUtilization float64   `json:"playerUtilization"` // Players / MaxPlayers
+	CPUUtilization    float64   `json:"cpuUtilization"`    // CPU usage percentage
+	MemoryUtilization float64   `json:"memoryUtilization"` // Memory usage percentage
+	MessageRate       float64   `json:"messageRate"`       // Messages per second
+	LastUpdated       time.Time `json:"lastUpdated"`
+	RecentPeakLoad    float64   `json:"recentPeakLoad"` // Peak load in last N minutes
+}
+
+// CellSplitResult contains the result of a cell split operation
+type CellSplitResult struct {
+	ParentCellID         CellID                    `json:"parentCellId"`
+	ChildCellIDs         []CellID                  `json:"childCellIds"`
+	SplitStartTime       time.Time                 `json:"splitStartTime"`
+	SplitEndTime         time.Time                 `json:"splitEndTime"`
+	SplitDuration        time.Duration             `json:"splitDuration"`
+	PlayersRedistributed int                       `json:"playersRedistributed"`
+	NewBoundaries        map[CellID]v1.WorldBounds `json:"newBoundaries"`
+	Success              bool                      `json:"success"`
+	ErrorMessage         string                    `json:"errorMessage,omitempty"`
+}
+
+// CellSplitEvent represents a cell split event for emission
+type CellSplitEvent struct {
+	Type          string           `json:"type"`
+	Timestamp     time.Time        `json:"timestamp"`
+	ParentCellID  CellID           `json:"parentCellId"`
+	ChildCellIDs  []CellID         `json:"childCellIds"`
+	SplitDuration time.Duration    `json:"splitDuration"`
+	Reason        string           `json:"reason"`
+	LoadMetrics   *CellLoadMetrics `json:"loadMetrics,omitempty"`
+	PlayerCount   int              `json:"playerCount"`
 }

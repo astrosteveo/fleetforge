@@ -34,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	fleetforgev1 "github.com/astrosteveo/fleetforge/api/v1"
+	"github.com/astrosteveo/fleetforge/pkg/cell"
 	"github.com/astrosteveo/fleetforge/pkg/controllers"
 	//+kubebuilder:scaffold:imports
 )
@@ -101,9 +102,10 @@ func main() {
 	}
 
 	if err = (&controllers.WorldSpecReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-		Log:    ctrl.Log.WithName("controllers").WithName("WorldSpec"),
+		Client:      mgr.GetClient(),
+		Scheme:      mgr.GetScheme(),
+		Log:         ctrl.Log.WithName("controllers").WithName("WorldSpec"),
+		CellManager: cell.NewCellManager(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "WorldSpec")
 		os.Exit(1)
