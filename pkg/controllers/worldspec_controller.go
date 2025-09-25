@@ -292,6 +292,11 @@ func (r *WorldSpecReconciler) reconcileCellService(ctx context.Context, worldSpe
 	return nil
 }
 
+// UpdateWorldSpecStatus updates the status of the WorldSpec (exported for testing)
+func (r *WorldSpecReconciler) UpdateWorldSpecStatus(ctx context.Context, worldSpec *fleetforgev1.WorldSpec, log logr.Logger) error {
+	return r.updateWorldSpecStatus(ctx, worldSpec, log)
+}
+
 // updateWorldSpecStatus updates the status of the WorldSpec
 func (r *WorldSpecReconciler) updateWorldSpecStatus(ctx context.Context, worldSpec *fleetforgev1.WorldSpec, log logr.Logger) error {
 	// Count active cells by looking at deployments
@@ -515,6 +520,12 @@ func boundsOverlap(bounds1, bounds2 fleetforgev1.WorldBounds) bool {
 
 	// If we get here, there is overlap in all checked dimensions
 	return true
+}
+
+// CalculateCellBoundaries calculates cell boundaries based on topology (exported for testing)
+func CalculateCellBoundaries(topology fleetforgev1.WorldTopology) []fleetforgev1.WorldBounds {
+	return calculateCellBoundaries(topology)
+}
 }
 
 func calculateCellBoundaries(topology fleetforgev1.WorldTopology) []fleetforgev1.WorldBounds {

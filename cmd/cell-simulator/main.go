@@ -25,10 +25,12 @@ import (
 	"os/signal"
 	"strconv"
 	"syscall"
+	"time"
 
 	fleetforgev1 "github.com/astrosteveo/fleetforge/api/v1"
 	"github.com/astrosteveo/fleetforge/pkg/cell"
 	"github.com/go-logr/logr"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
@@ -89,6 +91,9 @@ func main() {
 
 	// Start health check server
 	go startHealthServer(*healthPort, cellSim, setupLog)
+
+	// Start Prometheus metrics server
+	go startMetricsServer(*metricsPort, cellSim, setupLog)
 
 	// Wait for interrupt signal to gracefully shutdown
 	ctx, stop := signal.NotifyContext(context.TODO(), os.Interrupt, syscall.SIGTERM)
@@ -195,5 +200,32 @@ func startHealthServer(port int, cellSim *cell.CellSimulator, logger logr.Logger
 	logger.Info("Starting health server", "port", port)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		logger.Error(err, "Health server failed")
+	}
+}
+
+// startMetricsServer starts the Prometheus metrics HTTP server
+func startMetricsServer(port int, cellSim *cell.CellSimulator, logger logr.Logger) {
+	mux := http.NewServeMux()
+
+	// Prometheus metrics endpoint
+	mux.Handle("/metrics", promhttp.Handler())
+
+	server := &http.Server{
+		Addr:    ":" + strconv.Itoa(port),
+		Handler: mux,
+	}
+
+	// Start a ticker to update metrics periodically
+	ticker := time.NewTicker(5 * time.Second)
+	go func() {
+		defer ticker.Stop()
+		for range ticker.C {
+			cellSim.UpdatePrometheusMetrics()
+		}
+	}()
+
+	logger.Info("Starting Prometheus metrics server", "port", port)
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		logger.Error(err, "Metrics server failed")
 	}
 }
