@@ -91,11 +91,15 @@ vet: ## Run go vet against code.
 
 .PHONY: test
 test: fmt vet ## Run tests.
-	go test ./... -coverprofile cover.out
+	go test ./... -coverprofile coverage.out
 
 .PHONY: test-with-manifests
 test-with-manifests: manifests generate fmt vet ## Run tests with manifest generation.
-	go test ./... -coverprofile cover.out
+	go test ./... -coverprofile coverage.out
+
+.PHONY: test-coverage
+test-coverage: test ## Run tests and generate coverage report (alias for test).
+	@echo "Coverage report generated: coverage.out"
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
