@@ -43,13 +43,9 @@ Recent work on Kubernetes for game development [8] explores the benefits and cha
 Our world partitioning approach is designed to achieve the following objectives:
 
 - **Unified Persistent Worlds**: Support truly persistent, unified virtual worlds with bounded coordination domains while enabling seamless cross-partition gameplay experiences [3].
-
 - **Low-Latency Performance**: Maintain low p99 latency (target: <150ms globally, <75ms regionally) under crowd movement and density spikes via interest management and topology-aware placement [6,2].
-
 - **Declarative Operations**: Enable declarative control of capacity, consistency, and persistence policies, integrating with CI/CD workflows and GitOps practices [8].
-
 - **Operational Resilience**: Provide robust operational characteristics via multi-region deployment, automated failover, and policy-driven recovery mechanisms [4,5].
-
 - **Cost Efficiency**: Achieve superior resource utilization compared to traditional instance-based approaches through container co-tenancy and predictive scaling.
 
 ## 4. Reference Architecture
