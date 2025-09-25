@@ -108,6 +108,19 @@ func (r *WorldSpecReconciler) reconcileCells(ctx context.Context, worldSpec *fle
 	// Calculate cell boundaries based on world topology
 	cells := calculateCellBoundaries(worldSpec.Spec.Topology)
 
+	// Validate that cell boundaries properly partition the parent space
+	// Use a small tolerance for floating-point precision issues
+	tolerance := 1e-6
+	if err := validateCellPartitioning(worldSpec.Spec.Topology.WorldBoundaries, cells, tolerance); err != nil {
+		log.Error(err, "Cell boundary validation failed", "worldSpec", worldSpec.Name)
+		return ctrl.Result{}, fmt.Errorf("cell boundary validation failed: %w", err)
+	}
+
+	log.Info("Cell boundary validation passed",
+		"worldSpec", worldSpec.Name,
+		"parentArea", worldSpec.Spec.Topology.WorldBoundaries.CalculateArea(),
+		"numCells", len(cells))
+
 	for i, cellBounds := range cells {
 		cellID := fmt.Sprintf("%s-cell-%d", worldSpec.Name, i)
 
@@ -383,6 +396,126 @@ func (r *WorldSpecReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 // Helper functions
+
+// validateCellPartitioning verifies that child cells properly partition the parent space
+// without overlaps or gaps, and that the sum of areas equals the parent area
+func validateCellPartitioning(parentBounds fleetforgev1.WorldBounds, childCells []fleetforgev1.WorldBounds, tolerance float64) error {
+	if len(childCells) == 0 {
+		return fmt.Errorf("no child cells provided for validation")
+	}
+
+	if !parentBounds.IsValidBounds() {
+		return fmt.Errorf("parent bounds are invalid")
+	}
+
+	// Calculate parent area
+	parentArea := parentBounds.CalculateArea()
+	if parentArea == 0 {
+		return fmt.Errorf("parent area is zero")
+	}
+
+	// Calculate sum of child areas and validate each child
+	var childAreaSum float64
+	for i, child := range childCells {
+		if !child.IsValidBounds() {
+			return fmt.Errorf("child cell %d has invalid bounds", i)
+		}
+
+		childArea := child.CalculateArea()
+		if childArea == 0 {
+			return fmt.Errorf("child cell %d has zero area", i)
+		}
+
+		childAreaSum += childArea
+
+		// Validate child is within parent bounds
+		if err := validateChildWithinParent(parentBounds, child); err != nil {
+			return fmt.Errorf("child cell %d not within parent bounds: %w", i, err)
+		}
+	}
+
+	// Check if areas match within tolerance
+	areaDifference := childAreaSum - parentArea
+	if areaDifference < 0 {
+		areaDifference = -areaDifference
+	}
+
+	if areaDifference > tolerance {
+		return fmt.Errorf("area mismatch: child areas sum to %f, parent area is %f, difference %f exceeds tolerance %f",
+			childAreaSum, parentArea, areaDifference, tolerance)
+	}
+
+	// Validate no overlaps between child cells
+	if err := validateNoOverlaps(childCells); err != nil {
+		return fmt.Errorf("overlap detected between child cells: %w", err)
+	}
+
+	return nil
+}
+
+// validateChildWithinParent checks if a child bounds is completely within parent bounds
+func validateChildWithinParent(parent, child fleetforgev1.WorldBounds) error {
+	// Check X dimension
+	if child.XMin < parent.XMin || child.XMax > parent.XMax {
+		return fmt.Errorf("child X bounds [%f, %f] not within parent X bounds [%f, %f]",
+			child.XMin, child.XMax, parent.XMin, parent.XMax)
+	}
+
+	// Check Y dimension if both have it
+	if parent.YMin != nil && parent.YMax != nil && child.YMin != nil && child.YMax != nil {
+		if *child.YMin < *parent.YMin || *child.YMax > *parent.YMax {
+			return fmt.Errorf("child Y bounds [%f, %f] not within parent Y bounds [%f, %f]",
+				*child.YMin, *child.YMax, *parent.YMin, *parent.YMax)
+		}
+	}
+
+	// Check Z dimension if both have it
+	if parent.ZMin != nil && parent.ZMax != nil && child.ZMin != nil && child.ZMax != nil {
+		if *child.ZMin < *parent.ZMin || *child.ZMax > *parent.ZMax {
+			return fmt.Errorf("child Z bounds [%f, %f] not within parent Z bounds [%f, %f]",
+				*child.ZMin, *child.ZMax, *parent.ZMin, *parent.ZMax)
+		}
+	}
+
+	return nil
+}
+
+// validateNoOverlaps checks that no two child cells overlap
+func validateNoOverlaps(childCells []fleetforgev1.WorldBounds) error {
+	for i := 0; i < len(childCells); i++ {
+		for j := i + 1; j < len(childCells); j++ {
+			if boundsOverlap(childCells[i], childCells[j]) {
+				return fmt.Errorf("child cells %d and %d overlap", i, j)
+			}
+		}
+	}
+	return nil
+}
+
+// boundsOverlap checks if two WorldBounds overlap
+func boundsOverlap(bounds1, bounds2 fleetforgev1.WorldBounds) bool {
+	// Check X dimension - no overlap if one is completely before the other
+	if bounds1.XMax <= bounds2.XMin || bounds2.XMax <= bounds1.XMin {
+		return false
+	}
+
+	// Check Y dimension if both have it
+	if bounds1.YMin != nil && bounds1.YMax != nil && bounds2.YMin != nil && bounds2.YMax != nil {
+		if *bounds1.YMax <= *bounds2.YMin || *bounds2.YMax <= *bounds1.YMin {
+			return false
+		}
+	}
+
+	// Check Z dimension if both have it
+	if bounds1.ZMin != nil && bounds1.ZMax != nil && bounds2.ZMin != nil && bounds2.ZMax != nil {
+		if *bounds1.ZMax <= *bounds2.ZMin || *bounds2.ZMax <= *bounds1.ZMin {
+			return false
+		}
+	}
+
+	// If we get here, there is overlap in all checked dimensions
+	return true
+}
 
 func calculateCellBoundaries(topology fleetforgev1.WorldTopology) []fleetforgev1.WorldBounds {
 	// Simple implementation: divide world into equal cells
