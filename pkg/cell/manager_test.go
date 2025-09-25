@@ -361,6 +361,52 @@ func TestCellManager_GetCellStats(t *testing.T) {
 	}
 }
 
+func TestCellManager_GetPerCellStats(t *testing.T) {
+	manager := NewCellManager()
+	defer manager.(*DefaultCellManager).Shutdown()
+
+	spec := CellSpec{
+		ID: "test-cell-1",
+		Boundaries: v1.WorldBounds{
+			XMin: 0, XMax: 1000,
+			YMin: &yMinVal, YMax: &yMaxVal,
+		},
+		Capacity: CellCapacity{MaxPlayers: 50},
+	}
+
+	// Create cell
+	_, err := manager.CreateCell(spec)
+	if err != nil {
+		t.Fatalf("Failed to create cell: %v", err)
+	}
+
+	// Wait for cell to become ready
+	time.Sleep(time.Millisecond * 150)
+
+	perCellStats := manager.(*DefaultCellManager).GetPerCellStats()
+	if len(perCellStats) != 1 {
+		t.Errorf("Expected 1 cell in per-cell stats, got %d", len(perCellStats))
+	}
+
+	cellStats, exists := perCellStats["test-cell-1"]
+	if !exists {
+		t.Error("Expected test-cell-1 in per-cell stats")
+	}
+
+	// Verify load is 0 for empty cell
+	if cellStats["load"] != 0.0 {
+		t.Errorf("Expected load 0.0 for empty cell, got %f", cellStats["load"])
+	}
+
+	if cellStats["player_count"] != 0.0 {
+		t.Errorf("Expected player_count 0.0, got %f", cellStats["player_count"])
+	}
+
+	if cellStats["max_players"] != 50.0 {
+		t.Errorf("Expected max_players 50.0, got %f", cellStats["max_players"])
+	}
+}
+
 func TestCellManager_Checkpoint(t *testing.T) {
 	manager := NewCellManager()
 	defer manager.(*DefaultCellManager).Shutdown()

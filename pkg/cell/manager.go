@@ -342,3 +342,29 @@ func (m *DefaultCellManager) GetCellStats() map[string]interface{} {
 		"utilization_rate": utilizationRate,
 	}
 }
+
+// GetPerCellStats returns per-cell load statistics for metrics
+func (m *DefaultCellManager) GetPerCellStats() map[CellID]map[string]float64 {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	stats := make(map[CellID]map[string]float64)
+
+	for cellID, cell := range m.cells {
+		state := cell.GetState()
+
+		// Calculate load as player_count / max_players
+		load := 0.0
+		if state.Capacity.MaxPlayers > 0 {
+			load = float64(state.PlayerCount) / float64(state.Capacity.MaxPlayers)
+		}
+
+		stats[cellID] = map[string]float64{
+			"load":         load,
+			"player_count": float64(state.PlayerCount),
+			"max_players":  float64(state.Capacity.MaxPlayers),
+		}
+	}
+
+	return stats
+}

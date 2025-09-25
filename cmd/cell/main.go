@@ -270,11 +270,16 @@ func (s *CellService) handleMetrics(w http.ResponseWriter, r *http.Request) {
 
 	if defaultManager, ok := s.manager.(*cell.DefaultCellManager); ok {
 		stats := defaultManager.GetCellStats()
+		perCellStats := defaultManager.GetPerCellStats()
 
-		// Convert to Prometheus format
+		// Start with aggregate metrics
 		metrics := fmt.Sprintf(`# HELP fleetforge_cells_total Total number of cells
 # TYPE fleetforge_cells_total gauge
 fleetforge_cells_total %d
+
+# HELP fleetforge_cells_active Number of active cells
+# TYPE fleetforge_cells_active gauge
+fleetforge_cells_active %d
 
 # HELP fleetforge_cells_running Number of running cells
 # TYPE fleetforge_cells_running gauge
@@ -291,13 +296,23 @@ fleetforge_capacity_total %d
 # HELP fleetforge_utilization_rate Cell utilization rate (0-1)
 # TYPE fleetforge_utilization_rate gauge
 fleetforge_utilization_rate %.2f
+
+# HELP fleetforge_cell_load Load per cell (0-1)
+# TYPE fleetforge_cell_load gauge
 `,
 			stats["total_cells"],
+			stats["total_cells"], // cells_active same as total_cells for now
 			stats["running_cells"],
 			stats["total_players"],
 			stats["total_capacity"],
 			stats["utilization_rate"],
 		)
+
+		// Add per-cell load metrics
+		for cellID, cellStats := range perCellStats {
+			metrics += fmt.Sprintf(`fleetforge_cell_load{cell_id="%s"} %.2f
+`, cellID, cellStats["load"])
+		}
 
 		w.Header().Set("Content-Type", "text/plain")
 		w.Write([]byte(metrics))
