@@ -29,6 +29,6 @@ collections:
   devops-oncall: true
   frontend-web-dev: false
   project-planning: true
-  security-best-practices: false
-  technical-spike: false
-  testing-automation: false
+  security-best-practices: true
+  technical-spike: true
+  testing-automation: true

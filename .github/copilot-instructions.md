@@ -21,13 +21,20 @@ These instructions are compiled from the following sources:
 
 ## Active Instructions
 
-The following 6 instruction sets are currently active for this repository:
+The following 13 instruction sets are currently active for this repository:
 
 ### Enabled via Collections
 
+- **Instructions for accessibility** (`a11y`)
 - **Containerization & Docker Best Practices** (`containerization-docker-best-practices`)
 - **DevOps Core Principles** (`devops-core-principles`)
 - **MS-SQL DBA Chat Mode Instructions** (`ms-sql-dba`)
+- **Object Calisthenics Rules** (`object-calisthenics`)
+- **Performance Optimization Best Practices** (`performance-optimization`)
+- **Playwright Python Test Generation Instructions** (`playwright-python`)
+- **playwright-typescript** (`playwright-typescript`)
+- **Secure Coding and OWASP Guidelines** (`security-and-owasp`)
+- **Self-explanatory Code Commenting Instructions** (`self-explanatory-code-commenting`)
 - **Spec Driven Workflow v1** (`spec-driven-workflow-v1`)
 - **SQL Development** (`sql-sp-generation`)
 - **Task Plan Implementation Instructions** (`task-implementation`)
