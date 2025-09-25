@@ -9,21 +9,10 @@ func TestCellManager_CreateCell(t *testing.T) {
 	manager := NewCellManager()
 	defer manager.(*DefaultCellManager).Shutdown()
 
-	yMin := float64(0)
-	yMax := float64(1000)
 	spec := CellSpec{
-<<<<<<< HEAD
 		ID:         "test-cell-1",
 		Boundaries: createTestBounds(),
 		Capacity:   CellCapacity{MaxPlayers: 50},
-=======
-		ID: "test-cell-1",
-		Boundaries: v1.WorldBounds{
-			XMin: 0, XMax: 1000,
-			YMin: &yMin, YMax: &yMax,
-		},
-		Capacity: CellCapacity{MaxPlayers: 50},
->>>>>>> origin/main
 	}
 
 	cell, err := manager.CreateCell(spec)
@@ -50,24 +39,13 @@ func TestCellManager_CreateCell(t *testing.T) {
 }
 
 func TestCellManager_CreateCell_Duplicate(t *testing.T) {
-	yMin := float64(0)
-	yMax := float64(1000)
 	manager := NewCellManager()
 	defer manager.(*DefaultCellManager).Shutdown()
 
 	spec := CellSpec{
-<<<<<<< HEAD
 		ID:         "test-cell-1",
 		Boundaries: createTestBounds(),
 		Capacity:   CellCapacity{MaxPlayers: 50},
-=======
-		ID: "test-cell-1",
-		Boundaries: v1.WorldBounds{
-			XMin: 0, XMax: 1000,
-			YMin: &yMin, YMax: &yMax,
-		},
-		Capacity: CellCapacity{MaxPlayers: 50},
->>>>>>> origin/main
 	}
 
 	// Create first cell
@@ -84,24 +62,13 @@ func TestCellManager_CreateCell_Duplicate(t *testing.T) {
 }
 
 func TestCellManager_DeleteCell(t *testing.T) {
-	yMin := float64(0)
-	yMax := float64(1000)
 	manager := NewCellManager()
 	defer manager.(*DefaultCellManager).Shutdown()
 
 	spec := CellSpec{
-<<<<<<< HEAD
 		ID:         "test-cell-1",
 		Boundaries: createTestBounds(),
 		Capacity:   CellCapacity{MaxPlayers: 50},
-=======
-		ID: "test-cell-1",
-		Boundaries: v1.WorldBounds{
-			XMin: 0, XMax: 1000,
-			YMin: &yMin, YMax: &yMax,
-		},
-		Capacity: CellCapacity{MaxPlayers: 50},
->>>>>>> origin/main
 	}
 
 	// Create cell
@@ -124,24 +91,13 @@ func TestCellManager_DeleteCell(t *testing.T) {
 }
 
 func TestCellManager_AddRemovePlayer(t *testing.T) {
-	yMin := float64(0)
-	yMax := float64(1000)
 	manager := NewCellManager()
 	defer manager.(*DefaultCellManager).Shutdown()
 
 	spec := CellSpec{
-<<<<<<< HEAD
 		ID:         "test-cell-1",
 		Boundaries: createTestBounds(),
 		Capacity:   CellCapacity{MaxPlayers: 50},
-=======
-		ID: "test-cell-1",
-		Boundaries: v1.WorldBounds{
-			XMin: 0, XMax: 1000,
-			YMin: &yMin, YMax: &yMax,
-		},
-		Capacity: CellCapacity{MaxPlayers: 50},
->>>>>>> origin/main
 	}
 
 	// Create cell
@@ -184,24 +140,13 @@ func TestCellManager_AddRemovePlayer(t *testing.T) {
 }
 
 func TestCellManager_UpdatePlayerPosition(t *testing.T) {
-	yMin := float64(0)
-	yMax := float64(1000)
 	manager := NewCellManager()
 	defer manager.(*DefaultCellManager).Shutdown()
 
 	spec := CellSpec{
-<<<<<<< HEAD
 		ID:         "test-cell-1",
 		Boundaries: createTestBounds(),
 		Capacity:   CellCapacity{MaxPlayers: 50},
-=======
-		ID: "test-cell-1",
-		Boundaries: v1.WorldBounds{
-			XMin: 0, XMax: 1000,
-			YMin: &yMin, YMax: &yMax,
-		},
-		Capacity: CellCapacity{MaxPlayers: 50},
->>>>>>> origin/main
 	}
 
 	// Create cell
@@ -246,24 +191,13 @@ func TestCellManager_UpdatePlayerPosition(t *testing.T) {
 }
 
 func TestCellManager_GetHealth(t *testing.T) {
-	yMin := float64(0)
-	yMax := float64(1000)
 	manager := NewCellManager()
 	defer manager.(*DefaultCellManager).Shutdown()
 
 	spec := CellSpec{
-<<<<<<< HEAD
 		ID:         "test-cell-1",
 		Boundaries: createTestBounds(),
 		Capacity:   CellCapacity{MaxPlayers: 50},
-=======
-		ID: "test-cell-1",
-		Boundaries: v1.WorldBounds{
-			XMin: 0, XMax: 1000,
-			YMin: &yMin, YMax: &yMax,
-		},
-		Capacity: CellCapacity{MaxPlayers: 50},
->>>>>>> origin/main
 	}
 
 	// Create cell
@@ -286,24 +220,13 @@ func TestCellManager_GetHealth(t *testing.T) {
 }
 
 func TestCellManager_GetMetrics(t *testing.T) {
-	yMin := float64(0)
-	yMax := float64(1000)
 	manager := NewCellManager()
 	defer manager.(*DefaultCellManager).Shutdown()
 
 	spec := CellSpec{
-<<<<<<< HEAD
 		ID:         "test-cell-1",
 		Boundaries: createTestBounds(),
 		Capacity:   CellCapacity{MaxPlayers: 50},
-=======
-		ID: "test-cell-1",
-		Boundaries: v1.WorldBounds{
-			XMin: 0, XMax: 1000,
-			YMin: &yMin, YMax: &yMax,
-		},
-		Capacity: CellCapacity{MaxPlayers: 50},
->>>>>>> origin/main
 	}
 
 	// Create cell
@@ -334,8 +257,6 @@ func TestCellManager_GetMetrics(t *testing.T) {
 }
 
 func TestCellManager_ListCells(t *testing.T) {
-	yMin := float64(0)
-	yMax := float64(1000)
 	manager := NewCellManager()
 	defer manager.(*DefaultCellManager).Shutdown()
 
@@ -350,18 +271,9 @@ func TestCellManager_ListCells(t *testing.T) {
 	// Create some cells
 	for i := 0; i < 3; i++ {
 		spec := CellSpec{
-<<<<<<< HEAD
 			ID:         CellID("test-cell-" + string(rune('1'+i))),
 			Boundaries: createCustomBounds(float64(i*1000), float64((i+1)*1000), 0, 1000),
 			Capacity:   CellCapacity{MaxPlayers: 50},
-=======
-			ID: CellID("test-cell-" + string(rune('1'+i))),
-			Boundaries: v1.WorldBounds{
-				XMin: float64(i * 1000), XMax: float64((i + 1) * 1000),
-				YMin: &yMin, YMax: &yMax,
-			},
-			Capacity: CellCapacity{MaxPlayers: 50},
->>>>>>> origin/main
 		}
 
 		_, err := manager.CreateCell(spec)
@@ -382,8 +294,6 @@ func TestCellManager_ListCells(t *testing.T) {
 }
 
 func TestCellManager_GetCellStats(t *testing.T) {
-	yMin := float64(0)
-	yMax := float64(1000)
 	manager := NewCellManager()
 	defer manager.(*DefaultCellManager).Shutdown()
 
@@ -391,18 +301,9 @@ func TestCellManager_GetCellStats(t *testing.T) {
 
 	// Create a cell
 	spec := CellSpec{
-<<<<<<< HEAD
 		ID:         "test-cell-1",
 		Boundaries: createTestBounds(),
 		Capacity:   CellCapacity{MaxPlayers: 50},
-=======
-		ID: "test-cell-1",
-		Boundaries: v1.WorldBounds{
-			XMin: 0, XMax: 1000,
-			YMin: &yMin, YMax: &yMax,
-		},
-		Capacity: CellCapacity{MaxPlayers: 50},
->>>>>>> origin/main
 	}
 
 	_, err := manager.CreateCell(spec)
@@ -432,24 +333,13 @@ func TestCellManager_GetCellStats(t *testing.T) {
 }
 
 func TestCellManager_Checkpoint(t *testing.T) {
-	yMin := float64(0)
-	yMax := float64(1000)
 	manager := NewCellManager()
 	defer manager.(*DefaultCellManager).Shutdown()
 
 	spec := CellSpec{
-<<<<<<< HEAD
 		ID:         "test-cell-1",
 		Boundaries: createTestBounds(),
 		Capacity:   CellCapacity{MaxPlayers: 50},
-=======
-		ID: "test-cell-1",
-		Boundaries: v1.WorldBounds{
-			XMin: 0, XMax: 1000,
-			YMin: &yMin, YMax: &yMax,
-		},
-		Capacity: CellCapacity{MaxPlayers: 50},
->>>>>>> origin/main
 	}
 
 	// Create cell
@@ -469,26 +359,15 @@ func TestCellManager_Checkpoint(t *testing.T) {
 }
 
 func TestCellManager_GetPlayerSession(t *testing.T) {
-	yMin := float64(0)
-	yMax := float64(1000)
 	manager := NewCellManager()
 	defer manager.(*DefaultCellManager).Shutdown()
 
 	defaultManager := manager.(*DefaultCellManager)
 
 	spec := CellSpec{
-<<<<<<< HEAD
 		ID:         "test-cell-1",
 		Boundaries: createTestBounds(),
 		Capacity:   CellCapacity{MaxPlayers: 50},
-=======
-		ID: "test-cell-1",
-		Boundaries: v1.WorldBounds{
-			XMin: 0, XMax: 1000,
-			YMin: &yMin, YMax: &yMax,
-		},
-		Capacity: CellCapacity{MaxPlayers: 50},
->>>>>>> origin/main
 	}
 
 	// Create cell
