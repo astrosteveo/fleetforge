@@ -43,11 +43,13 @@ func TestNewCell(t *testing.T) {
 }
 
 func TestNewCell_EmptyID(t *testing.T) {
+	yMin := float64(0)
+	yMax := float64(1000)
 	spec := CellSpec{
 		ID: "",
 		Boundaries: v1.WorldBounds{
 			XMin: 0, XMax: 1000,
-			YMin: 0, YMax: 1000,
+			YMin: &yMin, YMax: &yMax,
 		},
 	}
 
@@ -58,11 +60,13 @@ func TestNewCell_EmptyID(t *testing.T) {
 }
 
 func TestCell_StartStop(t *testing.T) {
+	yMin := float64(0)
+	yMax := float64(1000)
 	spec := CellSpec{
 		ID: "test-cell-2",
 		Boundaries: v1.WorldBounds{
 			XMin: 0, XMax: 1000,
-			YMin: 0, YMax: 1000,
+			YMin: &yMin, YMax: &yMax,
 		},
 		Capacity: CellCapacity{MaxPlayers: 10},
 	}
@@ -102,11 +106,13 @@ func TestCell_StartStop(t *testing.T) {
 }
 
 func TestCell_AddPlayer(t *testing.T) {
+	yMin := float64(0)
+	yMax := float64(1000)
 	spec := CellSpec{
 		ID: "test-cell-3",
 		Boundaries: v1.WorldBounds{
 			XMin: 0, XMax: 1000,
-			YMin: 0, YMax: 1000,
+			YMin: &yMin, YMax: &yMax,
 		},
 		Capacity: CellCapacity{MaxPlayers: 10},
 	}
@@ -149,11 +155,13 @@ func TestCell_AddPlayer(t *testing.T) {
 }
 
 func TestCell_AddPlayer_OutOfBounds(t *testing.T) {
+	yMin := float64(0)
+	yMax := float64(1000)
 	spec := CellSpec{
 		ID: "test-cell-4",
 		Boundaries: v1.WorldBounds{
 			XMin: 0, XMax: 1000,
-			YMin: 0, YMax: 1000,
+			YMin: &yMin, YMax: &yMax,
 		},
 		Capacity: CellCapacity{MaxPlayers: 10},
 	}
@@ -187,11 +195,13 @@ func TestCell_AddPlayer_OutOfBounds(t *testing.T) {
 }
 
 func TestCell_AddPlayer_AtCapacity(t *testing.T) {
+	yMin := float64(0)
+	yMax := float64(1000)
 	spec := CellSpec{
 		ID: "test-cell-5",
 		Boundaries: v1.WorldBounds{
 			XMin: 0, XMax: 1000,
-			YMin: 0, YMax: 1000,
+			YMin: &yMin, YMax: &yMax,
 		},
 		Capacity: CellCapacity{MaxPlayers: 1},
 	}
@@ -238,11 +248,13 @@ func TestCell_AddPlayer_AtCapacity(t *testing.T) {
 }
 
 func TestCell_RemovePlayer(t *testing.T) {
+	yMin := float64(0)
+	yMax := float64(1000)
 	spec := CellSpec{
 		ID: "test-cell-6",
 		Boundaries: v1.WorldBounds{
 			XMin: 0, XMax: 1000,
-			YMin: 0, YMax: 1000,
+			YMin: &yMin, YMax: &yMax,
 		},
 		Capacity: CellCapacity{MaxPlayers: 10},
 	}
@@ -290,11 +302,13 @@ func TestCell_RemovePlayer(t *testing.T) {
 }
 
 func TestCell_UpdatePlayerPosition(t *testing.T) {
+	yMin := float64(0)
+	yMax := float64(1000)
 	spec := CellSpec{
 		ID: "test-cell-7",
 		Boundaries: v1.WorldBounds{
 			XMin: 0, XMax: 1000,
-			YMin: 0, YMax: 1000,
+			YMin: &yMin, YMax: &yMax,
 		},
 		Capacity: CellCapacity{MaxPlayers: 10},
 	}
@@ -340,11 +354,13 @@ func TestCell_UpdatePlayerPosition(t *testing.T) {
 }
 
 func TestCell_GetPlayersInArea(t *testing.T) {
+	yMin := float64(0)
+	yMax := float64(1000)
 	spec := CellSpec{
 		ID: "test-cell-8",
 		Boundaries: v1.WorldBounds{
 			XMin: 0, XMax: 1000,
-			YMin: 0, YMax: 1000,
+			YMin: &yMin, YMax: &yMax,
 		},
 		Capacity: CellCapacity{MaxPlayers: 10},
 	}
@@ -390,11 +406,13 @@ func TestCell_GetPlayersInArea(t *testing.T) {
 }
 
 func TestCell_Health(t *testing.T) {
+	yMin := float64(0)
+	yMax := float64(1000)
 	spec := CellSpec{
 		ID: "test-cell-9",
 		Boundaries: v1.WorldBounds{
 			XMin: 0, XMax: 1000,
-			YMin: 0, YMax: 1000,
+			YMin: &yMin, YMax: &yMax,
 		},
 		Capacity: CellCapacity{MaxPlayers: 10},
 	}
@@ -430,11 +448,13 @@ func TestCell_Health(t *testing.T) {
 }
 
 func TestCell_Metrics(t *testing.T) {
+	yMin := float64(0)
+	yMax := float64(1000)
 	spec := CellSpec{
 		ID: "test-cell-10",
 		Boundaries: v1.WorldBounds{
 			XMin: 0, XMax: 1000,
-			YMin: 0, YMax: 1000,
+			YMin: &yMin, YMax: &yMax,
 		},
 		Capacity: CellCapacity{MaxPlayers: 10},
 	}
@@ -471,11 +491,13 @@ func TestCell_Metrics(t *testing.T) {
 }
 
 func TestCell_CheckpointRestore(t *testing.T) {
+	yMin := float64(0)
+	yMax := float64(1000)
 	spec := CellSpec{
 		ID: "test-cell-11",
 		Boundaries: v1.WorldBounds{
 			XMin: 0, XMax: 1000,
-			YMin: 0, YMax: 1000,
+			YMin: &yMin, YMax: &yMax,
 		},
 		Capacity: CellCapacity{MaxPlayers: 10},
 	}

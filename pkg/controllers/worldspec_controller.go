@@ -25,10 +25,12 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -39,8 +41,9 @@ import (
 // WorldSpecReconciler reconciles a WorldSpec object
 type WorldSpecReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
-	Log    logr.Logger
+	Scheme   *runtime.Scheme
+	Log      logr.Logger
+	Recorder record.EventRecorder
 }
 
 //+kubebuilder:rbac:groups=fleetforge.io,resources=worldspecs,verbs=get;list;watch;create;update;patch;delete
@@ -49,6 +52,7 @@ type WorldSpecReconciler struct {
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch
+//+kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 
 // Reconcile reconciles the WorldSpec resource
 func (r *WorldSpecReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -285,25 +289,79 @@ func (r *WorldSpecReconciler) updateWorldSpecStatus(ctx context.Context, worldSp
 	}
 
 	activeCells := int32(0)
+	expectedCells := worldSpec.Spec.Topology.InitialCells
+	var cellStatuses []fleetforgev1.CellStatus
+
 	for _, deployment := range deploymentList.Items {
+		cellStatus := fleetforgev1.CellStatus{
+			ID:         deployment.Name,
+			PodName:    "", // Will be filled if pod exists
+			Health:     "Unknown",
+			Boundaries: fleetforgev1.WorldBounds{}, // Would need to be calculated from deployment
+		}
+
 		if deployment.Status.ReadyReplicas > 0 {
 			activeCells++
+			cellStatus.Health = "Healthy"
+		} else {
+			cellStatus.Health = "Pending"
 		}
+
+		cellStatuses = append(cellStatuses, cellStatus)
 	}
 
-	// Update status
+	// Update basic status fields
 	worldSpec.Status.ActiveCells = activeCells
+	worldSpec.Status.Cells = cellStatuses
 	worldSpec.Status.LastUpdateTime = &metav1.Time{Time: time.Now()}
 
-	if activeCells > 0 {
+	// Determine if world is ready (all expected cells are active)
+	isReady := activeCells >= expectedCells && expectedCells > 0
+	wasReady := r.isWorldReady(worldSpec)
+
+	// Update phase based on readiness
+	if isReady {
 		worldSpec.Status.Phase = "Running"
-		worldSpec.Status.Message = fmt.Sprintf("World running with %d active cells", activeCells)
+		worldSpec.Status.Message = fmt.Sprintf("World running with %d/%d active cells", activeCells, expectedCells)
 	} else {
 		worldSpec.Status.Phase = "Creating"
-		worldSpec.Status.Message = "Waiting for cells to become ready"
+		worldSpec.Status.Message = fmt.Sprintf("Waiting for cells to become ready (%d/%d)", activeCells, expectedCells)
+	}
+
+	// Update Ready condition
+	readyCondition := metav1.Condition{
+		Type:               "Ready",
+		LastTransitionTime: metav1.Now(),
+		ObservedGeneration: worldSpec.Generation,
+	}
+
+	if isReady {
+		readyCondition.Status = metav1.ConditionTrue
+		readyCondition.Reason = "AllCellsReady"
+		readyCondition.Message = fmt.Sprintf("All %d expected cells are ready and running", expectedCells)
+	} else {
+		readyCondition.Status = metav1.ConditionFalse
+		readyCondition.Reason = "CellsNotReady"
+		readyCondition.Message = fmt.Sprintf("Waiting for cells to become ready (%d/%d)", activeCells, expectedCells)
+	}
+
+	// Update the condition in the status
+	meta.SetStatusCondition(&worldSpec.Status.Conditions, readyCondition)
+
+	// Fire WorldInitialized event when transitioning to ready for the first time
+	if isReady && !wasReady {
+		r.Recorder.Event(worldSpec, corev1.EventTypeNormal, "WorldInitialized",
+			fmt.Sprintf("World %s initialized with %d cells", worldSpec.Name, activeCells))
+		log.Info("World initialized", "world", worldSpec.Name, "activeCells", activeCells)
 	}
 
 	return r.updateStatus(ctx, worldSpec, log)
+}
+
+// isWorldReady checks if the world was previously in Ready condition
+func (r *WorldSpecReconciler) isWorldReady(worldSpec *fleetforgev1.WorldSpec) bool {
+	readyCondition := meta.FindStatusCondition(worldSpec.Status.Conditions, "Ready")
+	return readyCondition != nil && readyCondition.Status == metav1.ConditionTrue
 }
 
 // updateStatus updates the status subresource
