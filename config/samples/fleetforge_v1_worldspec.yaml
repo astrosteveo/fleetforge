@@ -1,0 +1,37 @@
+apiVersion: fleetforge.io/v1
+kind: WorldSpec
+metadata:
+  name: example-world
+  namespace: default
+spec:
+  topology:
+    initialCells: 4
+    maxCellsPerCluster: 10
+    worldBoundaries:
+      xMin: -5000.0
+      xMax: 5000.0
+      yMin: -5000.0
+      yMax: 5000.0
+    cellSize: 1000.0
+  capacity:
+    maxPlayersPerCell: 100
+    cpuLimitPerCell: "1000m"
+    memoryLimitPerCell: "2Gi"
+    storagePerCell: "10Gi"
+  scaling:
+    scaleUpThreshold: 0.8
+    scaleDownThreshold: 0.3
+    minCells: 1
+    maxCells: 50
+  persistence:
+    enabled: true
+    checkpointInterval: 30
+    storageClass: "fast-ssd"
+    backupRetention: 7
+  gameConfig:
+    raw: |
+      {
+        "gameMode": "pvp",
+        "respawnTime": 5,
+        "maxItems": 1000
+      }
