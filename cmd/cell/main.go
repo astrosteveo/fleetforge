@@ -169,10 +169,23 @@ func (s *CellService) handleCreateCell(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	
-	// Wait a moment for the cell to initialize
-	time.Sleep(time.Millisecond * 100)
-	
-	state := createdCell.GetState()
+	// Wait for the cell to be ready, polling up to 2 seconds
+	const maxWait = 2 * time.Second
+	const pollInterval = 50 * time.Millisecond
+	waited := time.Duration(0)
+	var state cell.CellState
+	for {
+		state = createdCell.GetState()
+		if state.Ready {
+			break
+		}
+		if waited >= maxWait {
+			http.Error(w, "Cell did not become ready in time", http.StatusInternalServerError)
+			return
+		}
+		time.Sleep(pollInterval)
+		waited += pollInterval
+	}
 	
 	response := map[string]interface{}{
 		"id":          state.ID,
