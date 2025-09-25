@@ -1,0 +1,406 @@
+package controllers
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	fleetforgev1 "github.com/astrosteveo/fleetforge/api/v1"
+)
+
+func TestWorldSpecController_UpdateStatus(t *testing.T) {
+	// Setup logging
+	logf.SetLogger(zap.New(zap.UseDevMode(true)))
+
+	// Create scheme
+	scheme := runtime.NewScheme()
+	_ = fleetforgev1.AddToScheme(scheme)
+	_ = appsv1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+
+	// Create test WorldSpec
+	yMin := -1000.0
+	yMax := 1000.0
+	worldSpec := &fleetforgev1.WorldSpec{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-world",
+			Namespace: "default",
+		},
+		Spec: fleetforgev1.WorldSpecSpec{
+			Topology: fleetforgev1.WorldTopology{
+				InitialCells: 2,
+				WorldBoundaries: fleetforgev1.WorldBounds{
+					XMin: -1000.0,
+					XMax: 1000.0,
+					YMin: &yMin,
+					YMax: &yMax,
+				},
+			},
+			Capacity: fleetforgev1.CellCapacity{
+				MaxPlayersPerCell:  100,
+				CPULimitPerCell:    "1000m",
+				MemoryLimitPerCell: "2Gi",
+			},
+			Scaling: fleetforgev1.ScalingConfiguration{
+				ScaleUpThreshold:   0.8,
+				ScaleDownThreshold: 0.3,
+				PredictiveEnabled:  true,
+			},
+			Persistence: fleetforgev1.PersistenceConfiguration{
+				CheckpointInterval: "5m",
+				RetentionPeriod:    "7d",
+				Enabled:            true,
+			},
+			GameServerImage: "fleetforge-cell:latest",
+		},
+	}
+
+	t.Run("Status updates correctly when no cells are ready", func(t *testing.T) {
+		// Create fake client with WorldSpec but no deployments
+		testWorldSpec := worldSpec.DeepCopy()
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(testWorldSpec).
+			WithStatusSubresource(testWorldSpec).
+			Build()
+
+		// Create fake event recorder
+		fakeRecorder := record.NewFakeRecorder(10)
+
+		reconciler := &WorldSpecReconciler{
+			Client:   fakeClient,
+			Scheme:   scheme,
+			Log:      ctrl.Log.WithName("test"),
+			Recorder: fakeRecorder,
+		}
+
+		ctx := context.Background()
+
+		// Update status
+		err := reconciler.updateWorldSpecStatus(ctx, testWorldSpec, reconciler.Log)
+		if err != nil {
+			t.Fatalf("updateWorldSpecStatus failed: %v", err)
+		}
+
+		// Check status
+		if testWorldSpec.Status.Phase != "Creating" {
+			t.Errorf("Expected phase 'Creating', got '%s'", testWorldSpec.Status.Phase)
+		}
+
+		if testWorldSpec.Status.ActiveCells != 0 {
+			t.Errorf("Expected 0 active cells, got %d", testWorldSpec.Status.ActiveCells)
+		}
+
+		// Check Ready condition
+		readyCondition := meta.FindStatusCondition(testWorldSpec.Status.Conditions, "Ready")
+		if readyCondition == nil {
+			t.Fatal("Ready condition not found")
+		}
+
+		if readyCondition.Status != metav1.ConditionFalse {
+			t.Errorf("Expected Ready condition to be False, got %s", readyCondition.Status)
+		}
+
+		// No events should be recorded yet
+		select {
+		case event := <-fakeRecorder.Events:
+			t.Errorf("Unexpected event recorded: %s", event)
+		default:
+			// Good, no events
+		}
+	})
+
+	t.Run("Status updates correctly when all cells are ready", func(t *testing.T) {
+		// Create deployments that match the expected cells
+		deployment1 := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-world-cell-0",
+				Namespace: "default",
+				Labels: map[string]string{
+					"world": "test-world",
+					"app":   "fleetforge-cell",
+				},
+			},
+			Status: appsv1.DeploymentStatus{
+				ReadyReplicas: 1,
+			},
+		}
+
+		deployment2 := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-world-cell-1",
+				Namespace: "default",
+				Labels: map[string]string{
+					"world": "test-world",
+					"app":   "fleetforge-cell",
+				},
+			},
+			Status: appsv1.DeploymentStatus{
+				ReadyReplicas: 1,
+			},
+		}
+
+		// Create fake client with WorldSpec and ready deployments
+		testWorldSpec := worldSpec.DeepCopy()
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(testWorldSpec, deployment1, deployment2).
+			WithStatusSubresource(testWorldSpec).
+			Build()
+
+		// Create fake event recorder
+		fakeRecorder := record.NewFakeRecorder(10)
+
+		reconciler := &WorldSpecReconciler{
+			Client:   fakeClient,
+			Scheme:   scheme,
+			Log:      ctrl.Log.WithName("test"),
+			Recorder: fakeRecorder,
+		}
+
+		ctx := context.Background()
+
+		// Update status
+		err := reconciler.updateWorldSpecStatus(ctx, testWorldSpec, reconciler.Log)
+		if err != nil {
+			t.Fatalf("updateWorldSpecStatus failed: %v", err)
+		}
+
+		// Check status
+		if testWorldSpec.Status.Phase != "Running" {
+			t.Errorf("Expected phase 'Running', got '%s'", testWorldSpec.Status.Phase)
+		}
+
+		if testWorldSpec.Status.ActiveCells != 2 {
+			t.Errorf("Expected 2 active cells, got %d", testWorldSpec.Status.ActiveCells)
+		}
+
+		// Check Ready condition
+		readyCondition := meta.FindStatusCondition(testWorldSpec.Status.Conditions, "Ready")
+		if readyCondition == nil {
+			t.Fatal("Ready condition not found")
+		}
+
+		if readyCondition.Status != metav1.ConditionTrue {
+			t.Errorf("Expected Ready condition to be True, got %s", readyCondition.Status)
+		}
+
+		if readyCondition.Reason != "AllCellsReady" {
+			t.Errorf("Expected reason 'AllCellsReady', got '%s'", readyCondition.Reason)
+		}
+
+		// Check that WorldInitialized event was recorded
+		select {
+		case event := <-fakeRecorder.Events:
+			if !contains(event, "WorldInitialized") {
+				t.Errorf("Expected WorldInitialized event, got: %s", event)
+			}
+		case <-time.After(time.Second):
+			t.Error("Expected WorldInitialized event but none was recorded")
+		}
+	})
+
+	t.Run("WorldInitialized event is only fired once", func(t *testing.T) {
+		// Create a WorldSpec that's already ready
+		testWorldSpec := worldSpec.DeepCopy()
+		testWorldSpec.Status.Conditions = []metav1.Condition{
+			{
+				Type:   "Ready",
+				Status: metav1.ConditionTrue,
+				Reason: "AllCellsReady",
+			},
+		}
+
+		// Create ready deployments
+		deployment1 := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-world-cell-0",
+				Namespace: "default",
+				Labels: map[string]string{
+					"world": "test-world",
+					"app":   "fleetforge-cell",
+				},
+			},
+			Status: appsv1.DeploymentStatus{
+				ReadyReplicas: 1,
+			},
+		}
+
+		deployment2 := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-world-cell-1",
+				Namespace: "default",
+				Labels: map[string]string{
+					"world": "test-world",
+					"app":   "fleetforge-cell",
+				},
+			},
+			Status: appsv1.DeploymentStatus{
+				ReadyReplicas: 1,
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(testWorldSpec, deployment1, deployment2).
+			WithStatusSubresource(testWorldSpec).
+			Build()
+
+		fakeRecorder := record.NewFakeRecorder(10)
+
+		reconciler := &WorldSpecReconciler{
+			Client:   fakeClient,
+			Scheme:   scheme,
+			Log:      ctrl.Log.WithName("test"),
+			Recorder: fakeRecorder,
+		}
+
+		ctx := context.Background()
+
+		// Update status
+		err := reconciler.updateWorldSpecStatus(ctx, testWorldSpec, reconciler.Log)
+		if err != nil {
+			t.Fatalf("updateWorldSpecStatus failed: %v", err)
+		}
+
+		// No events should be recorded since it was already ready
+		select {
+		case event := <-fakeRecorder.Events:
+			t.Errorf("Unexpected event recorded: %s", event)
+		default:
+			// Good, no events
+		}
+	})
+}
+
+func TestWorldSpecController_Reconcile(t *testing.T) {
+	// Setup logging
+	logf.SetLogger(zap.New(zap.UseDevMode(true)))
+
+	// Create scheme
+	scheme := runtime.NewScheme()
+	_ = fleetforgev1.AddToScheme(scheme)
+	_ = appsv1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+
+	yMin := -1000.0
+	yMax := 1000.0
+	worldSpec := &fleetforgev1.WorldSpec{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-world",
+			Namespace: "default",
+		},
+		Spec: fleetforgev1.WorldSpecSpec{
+			Topology: fleetforgev1.WorldTopology{
+				InitialCells: 1,
+				WorldBoundaries: fleetforgev1.WorldBounds{
+					XMin: -1000.0,
+					XMax: 1000.0,
+					YMin: &yMin,
+					YMax: &yMax,
+				},
+			},
+			Capacity: fleetforgev1.CellCapacity{
+				MaxPlayersPerCell:  100,
+				CPULimitPerCell:    "1000m",
+				MemoryLimitPerCell: "2Gi",
+			},
+			Scaling: fleetforgev1.ScalingConfiguration{
+				ScaleUpThreshold:   0.8,
+				ScaleDownThreshold: 0.3,
+				PredictiveEnabled:  true,
+			},
+			Persistence: fleetforgev1.PersistenceConfiguration{
+				CheckpointInterval: "5m",
+				RetentionPeriod:    "7d",
+				Enabled:            true,
+			},
+			GameServerImage: "fleetforge-cell:latest",
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(worldSpec.DeepCopy()).
+		WithStatusSubresource(&fleetforgev1.WorldSpec{}).
+		Build()
+
+	fakeRecorder := record.NewFakeRecorder(10)
+
+	reconciler := &WorldSpecReconciler{
+		Client:   fakeClient,
+		Scheme:   scheme,
+		Log:      ctrl.Log.WithName("test"),
+		Recorder: fakeRecorder,
+	}
+
+	ctx := context.Background()
+	req := ctrl.Request{
+		NamespacedName: types.NamespacedName{
+			Name:      "test-world",
+			Namespace: "default",
+		},
+	}
+
+	// First reconcile should create the initial status
+	result, err := reconciler.Reconcile(ctx, req)
+	if err != nil {
+		t.Fatalf("Reconcile failed: %v", err)
+	}
+
+	if result.RequeueAfter == 0 {
+		t.Error("Expected requeue after some time")
+	}
+
+	// Fetch the updated WorldSpec
+	var updatedWorldSpec fleetforgev1.WorldSpec
+	err = fakeClient.Get(ctx, req.NamespacedName, &updatedWorldSpec)
+	if err != nil {
+		t.Fatalf("Failed to get updated WorldSpec: %v", err)
+	}
+
+	// Check that initial status was set
+	if updatedWorldSpec.Status.Phase != "Creating" {
+		t.Errorf("Expected phase 'Creating', got '%s'", updatedWorldSpec.Status.Phase)
+	}
+
+	// Check that Ready condition was set to false
+	readyCondition := meta.FindStatusCondition(updatedWorldSpec.Status.Conditions, "Ready")
+	if readyCondition == nil {
+		t.Fatal("Ready condition not found")
+	}
+
+	if readyCondition.Status != metav1.ConditionFalse {
+		t.Errorf("Expected Ready condition to be False, got %s", readyCondition.Status)
+	}
+}
+
+// Helper function to check if a string contains a substring
+func contains(s, substring string) bool {
+	return len(s) >= len(substring) &&
+		(s == substring ||
+			s[:len(substring)] == substring ||
+			s[len(s)-len(substring):] == substring ||
+			findSubstring(s, substring))
+}
+
+func findSubstring(s, substring string) bool {
+	for i := 0; i <= len(s)-len(substring); i++ {
+		if s[i:i+len(substring)] == substring {
+			return true
+		}
+	}
+	return false
+}

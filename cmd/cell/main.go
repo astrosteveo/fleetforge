@@ -42,6 +42,10 @@ func (s *CellService) Start() error {
 	mux.HandleFunc("/cells", s.handleCells)
 	mux.HandleFunc("/cells/", s.handleCellDetails)
 
+	// Player management endpoints
+	mux.HandleFunc("/players", s.handlePlayers)
+	mux.HandleFunc("/players/", s.handlePlayerDetails)
+
 	// Metrics endpoint
 	mux.HandleFunc("/metrics", s.handleMetrics)
 
@@ -353,4 +357,89 @@ func main() {
 	}
 
 	log.Println("Cell service stopped gracefully")
+}
+
+// handlePlayers handles player operations (POST to add player to a cell)
+func (s *CellService) handlePlayers(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		CellID   string  `json:"cellId"`
+		PlayerID string  `json:"playerId"`
+		X        float64 `json:"x"`
+		Y        float64 `json:"y"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON body", http.StatusBadRequest)
+		return
+	}
+
+	if req.CellID == "" || req.PlayerID == "" {
+		http.Error(w, "cellId and playerId are required", http.StatusBadRequest)
+		return
+	}
+
+	// Create player state
+	player := &cell.PlayerState{
+		ID: cell.PlayerID(req.PlayerID),
+		Position: cell.WorldPosition{
+			X: req.X,
+			Y: req.Y,
+		},
+		Connected: true,
+		LastSeen:  time.Now(),
+	}
+
+	// Add player to cell
+	err := s.manager.AddPlayer(cell.CellID(req.CellID), player)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to add player: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	response := map[string]interface{}{
+		"status":   "success",
+		"playerId": req.PlayerID,
+		"cellId":   req.CellID,
+		"position": map[string]float64{"x": req.X, "y": req.Y},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(response)
+}
+
+// handlePlayerDetails handles operations on specific players (DELETE to remove)
+func (s *CellService) handlePlayerDetails(w http.ResponseWriter, r *http.Request) {
+	// Extract player ID from URL path
+	playerID := r.URL.Path[len("/players/"):]
+	if playerID == "" {
+		http.Error(w, "Player ID required", http.StatusBadRequest)
+		return
+	}
+
+	if r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Get cell ID from query parameter
+	cellID := r.URL.Query().Get("cellId")
+	if cellID == "" {
+		http.Error(w, "cellId query parameter required", http.StatusBadRequest)
+		return
+	}
+
+	// Remove player from cell
+	err := s.manager.RemovePlayer(cell.CellID(cellID), cell.PlayerID(playerID))
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to remove player: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
