@@ -21,7 +21,17 @@ project:
   output_directory: ".github"
 prompts:
 instructions:
+  ai-prompt-engineering-safety-best-practices: true
 chatmodes:
+  api-architect: true
+  azure-saas-architect: true
+  meta-agentic-project-scaffold: true
+  principal-software-engineer: true
+  prompt-builder: true
+  prompt-engineer: true
+  refine-issue: true
+  specification: true
+  tech-debt-remediation-plan: true
 collections:
   azure-cloud-development: false
   csharp-dotnet-development: false

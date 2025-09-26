@@ -45,6 +45,10 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+status.txt
+
+# MkDocs build output
+site/
 
 # Docker and Kubernetes
 *.log

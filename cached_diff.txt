@@ -1,0 +1,4219 @@
+diff --git a/.github/workflows/docs-mkdocs.yml b/.github/workflows/docs-mkdocs.yml
+new file mode 100644
+index 0000000..e7d50e0
+--- /dev/null
++++ b/.github/workflows/docs-mkdocs.yml
+@@ -0,0 +1,45 @@
++name: Deploy MkDocs Documentation
++
++on:
++  workflow_dispatch:
++
++env:
++  PYTHON_VERSION: "3.11"
++
++jobs:
++  deploy:
++    runs-on: ubuntu-latest
++    
++    steps:
++    - name: Checkout repository
++      uses: actions/checkout@v4
++      with:
++        # Fetch full history for git-revision-date-localized plugin
++        fetch-depth: 0
++
++    - name: Set up Python
++      uses: actions/setup-python@v4
++      with:
++        python-version: ${{ env.PYTHON_VERSION }}
++
++    - name: Cache Python dependencies
++      uses: actions/cache@v3
++      with:
++        path: ~/.cache/pip
++        key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
++        restore-keys: |
++          ${{ runner.os }}-pip-
++
++    - name: Install dependencies
++      run: |
++        python -m pip install --upgrade pip
++        pip install -r requirements.txt
++
++    - name: Build documentation
++      run: mkdocs build --clean --strict
++
++    - name: Deploy to GitHub Pages
++      run: |
++        git config user.name github-actions[bot]
++        git config user.email 41898282+github-actions[bot]@users.noreply.github.com
++        mkdocs gh-deploy --force
+\ No newline at end of file
+diff --git a/.github/workflows/docs-pdf.yml b/.github/workflows/docs-pdf.yml
+deleted file mode 100644
+index 5b62e07..0000000
+--- a/.github/workflows/docs-pdf.yml
++++ /dev/null
+@@ -1,47 +0,0 @@
+-name: Build Docs PDFs
+-
+-on:
+-  workflow_dispatch:
+-  push:
+-    paths:
+-      - 'docs/**/*.md'
+-      - '.github/workflows/docs-pdf.yml'
+-
+-jobs:
+-  build-pdfs:
+-    runs-on: ubuntu-latest
+-    permissions:
+-      contents: write
+-    steps:
+-      - name: Checkout
+-        uses: actions/checkout@v4
+-
+-      - name: Install pandoc and tectonic
+-        run: |
+-          sudo apt-get update
+-          sudo apt-get install -y pandoc
+-          curl --proto '=https' --tlsv1.2 -sSf https://tectonic-installer.github.io/install.sh | sh
+-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+-
+-      - name: Generate PDFs
+-        run: |
+-          make pdfs || { echo 'Make failed'; exit 1; }
+-
+-      - name: Upload PDFs artifact
+-        uses: actions/upload-artifact@v4
+-        with:
+-          name: docs-pdfs
+-          path: docs/*.pdf
+-
+-      - name: Commit PDFs back (if changed)
+-        if: github.ref == 'refs/heads/main'
+-        run: |
+-          if git diff --quiet -- docs/*.pdf; then
+-            echo 'No PDF changes to commit.'
+-          else
+-            git config user.name 'github-actions'
+-            git config user.email 'actions@users.noreply.github.com'
+-            git add docs/*.pdf
+-            git commit -m 'chore(docs): update generated PDFs'
+-            git push
+-          fi
+diff --git a/.github/workflows/docs.yml b/.github/workflows/docs.yml
+new file mode 100644
+index 0000000..984f68e
+--- /dev/null
++++ b/.github/workflows/docs.yml
+@@ -0,0 +1,78 @@
++name: Deploy Documentation
++
++on:
++  push:
++    branches: [main]
++    paths:
++      - 'docs/**'
++      - 'mkdocs.yml'
++      - 'requirements.txt'
++      - '.github/workflows/docs.yml'
++  pull_request:
++    paths:
++      - 'docs/**'
++      - 'mkdocs.yml'
++      - 'requirements.txt'
++      - '.github/workflows/docs.yml'
++  workflow_dispatch:
++
++permissions:
++  contents: read
++  pages: write
++  id-token: write
++
++concurrency:
++  group: "pages"
++  cancel-in-progress: false
++
++jobs:
++  build:
++    runs-on: ubuntu-latest
++    steps:
++      - name: Checkout
++        uses: actions/checkout@v4
++        with:
++          fetch-depth: 0
++
++      - name: Setup Python
++        uses: actions/setup-python@v4
++        with:
++          python-version: '3.11'
++
++      - name: Cache pip dependencies
++        uses: actions/cache@v3
++        with:
++          path: ~/.cache/pip
++          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
++          restore-keys: |
++            ${{ runner.os }}-pip-
++
++      - name: Install MkDocs tooling
++        run: |
++          python -m pip install --upgrade pip
++          pip install -r requirements.txt
++
++      - name: Build documentation
++        run: mkdocs build --clean --strict
++
++      - name: Setup Pages
++        if: github.event_name == 'push'
++        uses: actions/configure-pages@v3
++
++      - name: Upload artifact
++        if: github.event_name == 'push'
++        uses: actions/upload-pages-artifact@v2
++        with:
++          path: site
++
++  deploy:
++    if: github.event_name == 'push'
++    environment:
++      name: github-pages
++      url: ${{ steps.deployment.outputs.page_url }}
++    runs-on: ubuntu-latest
++    needs: build
++    steps:
++      - name: Deploy to GitHub Pages
++        id: deployment
++        uses: actions/deploy-pages@v2
+\ No newline at end of file
+diff --git a/.gitignore b/.gitignore
+index 7bfabb6..90e36d3 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -45,6 +45,10 @@ Thumbs.db
+ # Temporary files
+ *.tmp
+ *.temp
++status.txt
++
++# MkDocs build output
++site/
+ 
+ # Docker and Kubernetes
+ *.log
+diff --git a/.vscode/settings.json b/.vscode/settings.json
+index dbb05b4..38b312c 100644
+--- a/.vscode/settings.json
++++ b/.vscode/settings.json
+@@ -7,5 +7,12 @@
+   },
+   "chat.instructionsFilesLocations": {
+     ".github/instructions": true
++  },
++  "yaml.schemas": {
++    "https://squidfunk.github.io/mkdocs-material/schema.json": "mkdocs.yml",
++    "https://www.schemastore.org/mkdocs-1.6.json": [
++      "file:///home/astrosteveo/Repos/fleetforge/docs/mkdocs.yml",
++      "file:///home/astrosteveo/Repos/fleetforge/mkdocs.yml"
++    ]
+   }
+ }
+\ No newline at end of file
+diff --git a/docs/README-MKDOCS.md b/docs/README-MKDOCS.md
+new file mode 100644
+index 0000000..594a4a3
+--- /dev/null
++++ b/docs/README-MKDOCS.md
+@@ -0,0 +1,151 @@
++# Page moved
++
++This content now lives at [contributing/docs-site-playbook.md](contributing/docs-site-playbook.md). Update any bookmarks or references.
++
++## Local Development
++
++### Prerequisites
++
++```bash
++# Install Python and pip
++# On macOS: brew install python
++# On Ubuntu: sudo apt install python3 python3-pip
++
++# Install MkDocs and plugins
++pip install mkdocs-material
++pip install mkdocs-git-revision-date-localized-plugin
++pip install mkdocs-git-authors-plugin
++pip install mkdocs-mermaid2-plugin
++```
++
++### Run Locally
++
++```bash
++cd docs
++mkdocs serve
++```
++
++Visit http://localhost:8000 to view the documentation site.
++
++## Build and Deploy
++
++### Build Static Site
++
++```bash
++cd docs
++mkdocs build
++```
++
++The built site will be in `docs/site/`.
++
++### GitHub Pages Deployment
++
++The documentation is automatically deployed to GitHub Pages via GitHub Actions when changes are pushed to the `main` branch.
++
++## Project Structure
++
++```
++docs/
++├── mkdocs.yml                 # MkDocs configuration
++├── index.md                   # Homepage
++├── getting-started/           # User guides
++│   ├── quick-start.md
++│   ├── installation.md
++│   └── development.md
++├── product/                   # Existing product docs
++├── architecture/              # Existing architecture docs
++├── adr/                       # Architecture Decision Records
++├── ops/                       # Operations guides
++└── research/                  # Research papers
++```
++
++## Customization
++
++### Theme Configuration
++
++Edit `mkdocs.yml` to customize:
++
++- Color scheme and branding
++- Navigation structure  
++- Plugin configuration
++- Markdown extensions
++
++### Adding New Pages
++
++1. Create new markdown files in appropriate directories
++2. Add them to the `nav` section in `mkdocs.yml`
++3. Use relative links between pages
++
++### Mermaid Diagrams
++
++Use mermaid syntax for diagrams:
++
++```markdown
++```mermaid
++graph TB
++    A[Start] --> B[Process]
++    B --> C[End]
++```
++```
++
++### Admonitions
++
++Use admonitions for callouts:
++
++```markdown
++!!! note "Information"
++    This is an informational note.
++
++!!! warning "Warning" 
++    This is a warning message.
++
++!!! tip "Pro Tip"
++    This is a helpful tip.
++```
++
++## Content Guidelines
++
++### Writing Style
++
++- Use clear, concise language
++- Include code examples where relevant
++- Add navigation links at the end of pages
++- Use consistent formatting
++
++### Documentation Structure
++
++- **Getting Started**: User-focused guides for new users
++- **Product**: Requirements, roadmap, and planning documents  
++- **Architecture**: Technical design and system documentation
++- **ADR**: Architecture Decision Records
++- **Operations**: Runbooks and operational guides
++- **Research**: Background research and academic papers
++
++### Cross-References
++
++Use relative links to reference other documentation:
++
++```markdown
++See the [Architecture Design](../architecture/design.md) for more details.
++```
++
++## Maintenance
++
++### Updating Dependencies
++
++```bash
++pip install --upgrade mkdocs-material
++pip install --upgrade mkdocs-git-revision-date-localized-plugin
++pip install --upgrade mkdocs-git-authors-plugin
++pip install --upgrade mkdocs-mermaid2-plugin
++```
++
++### Checking Links
++
++Use mkdocs to validate internal links:
++
++```bash
++mkdocs build --strict
++```
++
++This will fail if there are any broken internal links.
+\ No newline at end of file
+diff --git a/docs/README.md b/docs/README.md
+index cdbe9f5..28d0748 100644
+--- a/docs/README.md
++++ b/docs/README.md
+@@ -1,6 +1,6 @@
+-# Documentation Index
++# Page moved
+ 
+-This directory houses product, architecture, research, and decision artifacts for FleetForge.
++This content now lives at [contributing/documentation-overview.md](contributing/documentation-overview.md). Please update bookmarks and documentation references.
+ 
+ ## Structure
+ 
+@@ -10,36 +10,42 @@ docs/
+   architecture/   # Design docs, diagrams
+   research/       # Academic / research papers & references
+   adr/            # Architecture Decision Records
+-  ops/            # (Placeholder) Runbooks, SRE guides
++  ops/            # Runbooks and SRE guides
+ ```
+ 
+-## Key Artifacts
+-- `product/prd.md` – Elasticity MVP Product Requirements Document
+-- `product/requirements.md` – Full platform requirements (long-term)
+-- `product/tasks.md` – Implementation task breakdown (phased)
+-- `architecture/design.md` – System architecture & component design
++## Key artifacts
++
++- `product/prd.md` – Elasticity MVP product requirements document
++- `product/requirements.md` – Long-term system requirements (EARS format)
++- `product/tasks.md` – Implementation task breakdown
++- `architecture/design.md` – System and component design overview
+ - `adr/ADR-0001-initial-mvp-scope.md` – MVP scope decision record
+-- `research/` – Supporting conceptual and academic background
++- `research/` – Supporting academic references and research notes
+ 
+ ## Conventions
++
+ - All new strategic or architectural decisions require an ADR
+-- Requirements changes must update `product/requirements.md` & trace to user stories
+-- PRDs reference requirements IDs and user story IDs (GH-###)
+-- Diagrams (future) live under `architecture/diagrams/`
++- Requirements changes must update `product/requirements.md` with traceability
++- PRDs reference requirement IDs and user story IDs (`GH-###`)
++- Diagrams and schematics live under `architecture/` (e.g., `architecture/diagrams/`)
++
++## Next planned docs
+ 
+-## Next Planned Docs
+-- Runbook: `ops/runbook-elasticity-demo.md`
+-- Dashboard JSON: `architecture/diagrams/grafana-elasticity.json`
+-- Boundary algorithm spec: `architecture/boundary-subdivision.md`
++- Additional runbooks (e.g., `ops/runbook-elasticity-demo.md`)
++- Observability assets (dashboards, alerts) tracked under `ops/`
++- Extended boundary algorithm specifications under `architecture/`
+ 
+ ## Traceability
+-User stories GH-001–GH-025 map to MVP scope (see `prd.md`). Extended requirements (REQ-###) map to design sections; future traceability matrix TBD for multi-cluster phases.
++
++User stories `GH-001` through `GH-025` define the MVP scope (see `prd.md`). Extended requirements (`REQ-###`) map to sections in `product/requirements.md`. A future traceability matrix will cover multi-cluster phases.
+ 
+ ## Adding an ADR
+-Filename pattern: `ADR-####-short-slug.md` incrementing sequence.
++
++Filename pattern: `ADR-####-short-slug.md`, incrementing the numeric prefix.
+ 
+ Template excerpt:
+-```
++
++```text
+ ## ADR-NNNN: Title
+ Status
+ Context
+@@ -50,3 +56,4 @@ Consequences
+ Review Plan
+ Tags
+ ```
++
+diff --git a/docs/adr/index.md b/docs/adr/index.md
+new file mode 100644
+index 0000000..8aa951b
+--- /dev/null
++++ b/docs/adr/index.md
+@@ -0,0 +1,58 @@
++# ADR Index
++
++This section contains Architecture Decision Records (ADRs) documenting key architectural decisions for FleetForge.
++
++## What are ADRs?
++
++Architecture Decision Records are short documents that capture important architectural decisions along with their context and consequences. They help teams understand why certain decisions were made and provide guidance for future development.
++
++## ADR Template
++
++When creating new ADRs, use this template:
++
++```markdown
++# ADR-NNNN: [Decision Title]
++
++## Status
++[Proposed | Accepted | Deprecated | Superseded]
++
++## Context
++[What is the issue that we're seeing that is motivating this decision or change?]
++
++## Decision
++[What is the change that we're proposing and/or doing?]
++
++## Alternatives Considered
++[What other alternatives were considered? Why were they not chosen?]
++
++## Rationale
++[Why is this the best choice among the alternatives?]
++
++## Consequences
++[What becomes easier or more difficult to do because of this change?]
++
++## Review Plan
++[When and how should this decision be reviewed?]
++
++## Tags
++[Technical area, impact level, etc.]
++```
++
++## Current ADRs
++
++- **[ADR-0001: Initial MVP Scope](ADR-0001-initial-mvp-scope.md)** - Defines the scope and boundaries for the FleetForge MVP
++
++## Adding New ADRs
++
++1. Create a new file following the naming pattern: `ADR-NNNN-short-description.md`
++2. Use the next sequential number (NNNN)
++3. Follow the template above
++4. Add the ADR to this index
++5. Reference the ADR in relevant design documents
++
++## ADR Lifecycle
++
++- **Proposed**: Initial draft under review
++- **Accepted**: Decision has been approved and implemented
++- **Deprecated**: Decision is no longer recommended but may still be in use
++- **Superseded**: Decision has been replaced by a newer ADR
+\ No newline at end of file
+diff --git a/docs/api-reference/index.md b/docs/api-reference/index.md
+new file mode 100644
+index 0000000..f097d65
+--- /dev/null
++++ b/docs/api-reference/index.md
+@@ -0,0 +1,299 @@
++# API Reference
++
++FleetForge provides Kubernetes-native APIs for managing elastic cell infrastructures. This section documents all available APIs, resources, and their usage.
++
++## Overview
++
++FleetForge extends Kubernetes with Custom Resource Definitions (CRDs) that provide declarative management of distributed application cells.
++
++### Current API Version
++
++- **API Group**: `fleetforge.io`  
++- **Version**: `v1`
++- **Kind**: `WorldSpec`
++
++## Core Resources
++
++### WorldSpec
++
++The `WorldSpec` resource defines a distributed world that FleetForge should manage with elastic cells.
++
++#### Basic Example
++
++```yaml
++apiVersion: fleetforge.io/v1
++kind: WorldSpec
++metadata:
++  name: my-world
++  namespace: default
++spec:
++  boundary:
++    minX: 0
++    maxX: 1000
++    minY: 0  
++    maxY: 1000
++  cellSize:
++    width: 500
++    height: 500
++  template:
++    metadata:
++      labels:
++        world: my-world
++    spec:
++      containers:
++      - name: cell-simulator
++        image: fleetforge-cell:latest
++        ports:
++        - containerPort: 8080
++          name: http
++```
++
++#### Resource Specification
++
++| Field | Type | Required | Description |
++|-------|------|----------|-------------|
++| `spec.boundary` | `Boundary` | Yes | World coordinate boundaries |
++| `spec.cellSize` | `CellSize` | Yes | Size of individual cells |
++| `spec.template` | `PodTemplateSpec` | Yes | Template for cell pods |
++| `spec.maxCells` | `int32` | No | Maximum number of cells (default: unlimited) |
++
++#### Boundary
++
++Defines the coordinate space of the world:
++
++```yaml
++boundary:
++  minX: 0     # Minimum X coordinate
++  maxX: 1000  # Maximum X coordinate  
++  minY: 0     # Minimum Y coordinate
++  maxY: 1000  # Maximum Y coordinate
++```
++
++#### CellSize
++
++Defines the size of individual cells:
++
++```yaml
++cellSize:
++  width: 500   # Cell width in world coordinates
++  height: 500  # Cell height in world coordinates
++```
++
++#### Status Fields
++
++The WorldSpec status provides information about the current state:
++
++| Field | Type | Description |
++|-------|------|-------------|
++| `status.conditions` | `[]Condition` | Current conditions |
++| `status.cellCount` | `int32` | Number of active cells |
++| `status.phase` | `string` | Current world phase |
++
++#### Conditions
++
++Standard Kubernetes conditions:
++
++- **Ready**: World is fully initialized and operational
++- **Progressing**: World is being created or updated
++- **Degraded**: Some cells are not functioning properly
++
++#### Example with Status
++
++```yaml
++apiVersion: fleetforge.io/v1
++kind: WorldSpec
++metadata:
++  name: my-world
++status:
++  conditions:
++  - type: Ready
++    status: "True"
++    reason: WorldInitialized
++    message: "World initialized with 4 cells"
++  - type: Progressing
++    status: "False"
++    reason: Stable
++    message: "All cells are running"
++  cellCount: 4
++  phase: Running
++```
++
++## Advanced Configuration
++
++### Resource Management
++
++Control CPU and memory for cell pods:
++
++```yaml
++spec:
++  template:
++    spec:
++      containers:
++      - name: cell-simulator
++        image: fleetforge-cell:latest
++        resources:
++          requests:
++            cpu: 100m
++            memory: 128Mi
++          limits:
++            cpu: 500m
++            memory: 512Mi
++```
++
++### Environment Variables
++
++Pass configuration to cell simulators:
++
++```yaml
++spec:
++  template:
++    spec:
++      containers:
++      - name: cell-simulator
++        env:
++        - name: CELL_LOG_LEVEL
++          value: debug
++        - name: METRICS_ENABLED
++          value: "true"
++```
++
++### Volume Mounts
++
++Share data between cells:
++
++```yaml
++spec:
++  template:
++    spec:
++      containers:
++      - name: cell-simulator
++        volumeMounts:
++        - name: shared-data
++          mountPath: /data
++      volumes:
++      - name: shared-data
++        persistentVolumeClaim:
++          claimName: world-data
++```
++
++## kubectl Operations
++
++### Create a World
++
++```bash
++# Apply from file
++kubectl apply -f my-world.yaml
++
++# Create from command line
++kubectl create -f - <<EOF
++apiVersion: fleetforge.io/v1
++kind: WorldSpec
++metadata:
++  name: test-world
++spec:
++  boundary: {minX: 0, maxX: 500, minY: 0, maxY: 500}
++  cellSize: {width: 250, height: 250}
++  template:
++    spec:
++      containers:
++      - name: cell-simulator
++        image: fleetforge-cell:latest
++EOF
++```
++
++### Query Worlds
++
++```bash
++# List all worlds
++kubectl get worldspecs
++
++# Get detailed information
++kubectl describe worldspec my-world
++
++# Watch world status
++kubectl get worldspecs -w
++
++# Get world status in JSON
++kubectl get worldspec my-world -o json
++```
++
++### Update a World
++
++```bash
++# Edit interactively  
++kubectl edit worldspec my-world
++
++# Patch specific fields
++kubectl patch worldspec my-world --type='merge' -p='{"spec":{"maxCells":10}}'
++
++# Replace from file
++kubectl replace -f updated-world.yaml
++```
++
++### Delete a World
++
++```bash
++# Delete specific world (will clean up cells)
++kubectl delete worldspec my-world
++
++# Delete all worlds
++kubectl delete worldspecs --all
++```
++
++## Troubleshooting
++
++### Common Issues
++
++**World Not Ready**
++
++Check conditions and events:
++```bash
++kubectl describe worldspec my-world
++kubectl get events --field-selector involvedObject.name=my-world
++```
++
++**Cells Not Starting**
++
++Check cell pod status:
++```bash
++kubectl get pods -l world=my-world
++kubectl logs -l world=my-world
++```
++
++**Controller Errors**
++
++Check controller logs:
++```bash
++kubectl logs -n fleetforge-system deployment/fleetforge-controller-manager
++```
++
++### Validation Errors
++
++WorldSpec resources are validated on creation:
++
++- Boundary coordinates must be valid (minX < maxX, minY < maxY)
++- Cell size must be positive
++- Template must be a valid PodTemplateSpec
++
++## API Evolution
++
++### Future APIs
++
++Planned additions to the FleetForge API:
++
++- **CellGroup**: Group cells for coordinated operations
++- **MigrationPolicy**: Define cell migration strategies  
++- **TenantSpec**: Multi-tenant world management
++- **ScalingPolicy**: Autoscaling configuration
++
++### Backward Compatibility
++
++FleetForge follows Kubernetes API versioning conventions:
++
++- `v1` APIs are stable and backward compatible
++- New fields are added in a backward-compatible way
++- Deprecated fields are marked and removed in future versions
++
++---
++
++*For the latest API schema definitions, see the [CRD manifests](https://github.com/astrosteveo/fleetforge/tree/main/config/crd/bases) in the source repository.*
+\ No newline at end of file
+diff --git a/docs/architecture/production-readiness-design.md b/docs/architecture/production-readiness-design.md
+new file mode 100644
+index 0000000..6218f2a
+--- /dev/null
++++ b/docs/architecture/production-readiness-design.md
+@@ -0,0 +1,403 @@
++# Production Readiness Technical Design
++
++## Document Information
++
++- **Project**: FleetForge Production Readiness - Technical Design
++- **Version**: 1.0
++- **Date**: September 25, 2025
++- **Status**: Draft - Technical Review
++- **Related**: production-readiness-plan.md, design.md
++
++## Architecture Overview
++
++This document details the technical implementation strategy for transitioning FleetForge to production-ready status. The design focuses on security hardening, observability infrastructure, reliability engineering, and operational excellence.
++
++## Technical Implementation Strategy
++
++### Security Architecture
++
++#### Container Security
++
++```mermaid
++graph TB
++    A[Source Code] --> B[Security Scanning]
++    B --> C[Container Build]
++    C --> D[Image Scanning]
++    D --> E{Vulnerabilities?}
++    E -->|Yes| F[Block Deployment]
++    E -->|No| G[Sign & Push]
++    G --> H[Deployment]
++    
++    I[Runtime Security]
++    H --> I
++    I --> J[Pod Security Standards]
++    I --> K[Network Policies]
++    I --> L[RBAC Enforcement]
++```
++
++**Implementation Details**:
++
++- **Base Images**: Use distroless or minimal base images
++- **Multi-stage Builds**: Reduce attack surface by excluding build tools
++- **Vulnerability Scanning**: Integrate Trivy or Grype in CI/CD
++- **Image Signing**: Use cosign for container image signing
++- **Runtime Security**: Implement OPA Gatekeeper policies
++
++#### Network Security
++
++```yaml
++# Example Network Policy
++apiVersion: networking.k8s.io/v1
++kind: NetworkPolicy
++metadata:
++  name: fleetforge-controller-policy
++spec:
++  podSelector:
++    matchLabels:
++      app: fleetforge-controller
++  policyTypes:
++  - Ingress
++  - Egress
++  ingress:
++  - from:
++    - namespaceSelector:
++        matchLabels:
++          name: monitoring
++    ports:
++    - protocol: TCP
++      port: 8080  # Metrics
++  egress:
++  - to:
++    - namespaceSelector:
++        matchLabels:
++          name: kube-system
++    ports:
++    - protocol: TCP
++      port: 443   # Kubernetes API
++```
++
++### Observability Infrastructure
++
++#### Monitoring Stack Architecture
++
++```mermaid
++graph TB
++    A[FleetForge Components] --> B[Metrics Exporters]
++    B --> C[Prometheus]
++    C --> D[Grafana]
++    C --> E[AlertManager]
++    E --> F[PagerDuty/Slack]
++    
++    A --> G[Structured Logs]
++    G --> H[Loki]
++    H --> D
++    
++    A --> I[Distributed Tracing]
++    I --> J[Jaeger]
++    J --> D
++```
++
++**Key Components**:
++
++1. **Prometheus Stack**
++   - Prometheus Server with HA configuration
++   - AlertManager with routing and silencing
++   - Node Exporter for infrastructure metrics
++   - Blackbox Exporter for endpoint monitoring
++
++2. **Logging Infrastructure**
++   - Loki for log aggregation
++   - Promtail for log collection
++   - Structured JSON logging in all components
++
++3. **Distributed Tracing**
++   - Jaeger for request tracing
++   - OpenTelemetry instrumentation
++   - Trace correlation with logs
++
++#### Service Level Indicators (SLIs)
++
++| SLI | Target | Alert Threshold | Measurement |
++|-----|--------|----------------|-------------|
++| WorldSpec Reconciliation Success Rate | >99.9% | <99.5% | Successful reconciliations / Total attempts |
++| Reconciliation Latency | <5s (95th %ile) | >10s (95th %ile) | Time from WorldSpec change to reconciliation |
++| Cell Creation Time | <30s (95th %ile) | >60s (95th %ile) | Time from reconciliation to cell ready |
++| Controller Availability | >99.9% | <99.5% | Controller uptime / Total time |
++| API Request Success Rate | >99.95% | <99.9% | 2xx responses / Total requests |
++
++### Reliability Engineering
++
++#### High Availability Design
++
++```mermaid
++graph TB
++    A[Load Balancer] --> B[Controller Instance 1]
++    A --> C[Controller Instance 2]
++    A --> D[Controller Instance 3]
++    
++    B --> E[Leader Election]
++    C --> E
++    D --> E
++    
++    E --> F[Active Controller]
++    G[Standby Controllers] --> E
++    
++    F --> H[Kubernetes API]
++    F --> I[Cell Management]
++    
++    J[etcd Cluster] --> H
++    K[Persistent Storage] --> I
++```
++
++**Implementation Strategy**:
++
++- **Leader Election**: Use Kubernetes lease-based leader election
++- **Horizontal Scaling**: Deploy 3+ controller replicas across zones
++- **Graceful Shutdown**: Implement proper signal handling and cleanup
++- **Circuit Breakers**: Add circuit breaker pattern for external dependencies
++
++#### Backup and Recovery
++
++```mermaid
++sequenceDiagram
++    participant S as Backup Scheduler
++    participant E as etcd
++    participant V as Velero
++    participant O as Object Storage
++    
++    S->>E: Snapshot etcd
++    E->>O: Store etcd backup
++    S->>V: Trigger cluster backup
++    V->>O: Store resource manifests
++    
++    Note over S,O: Recovery Process
++    O->>E: Restore etcd snapshot
++    O->>V: Restore resources
++    V->>K8s: Apply manifests
++```
++
++### Performance Optimization
++
++#### Resource Management
++
++```yaml
++# Controller Resource Configuration
++resources:
++  requests:
++    memory: "256Mi"
++    cpu: "100m"
++  limits:
++    memory: "512Mi"
++    cpu: "500m"
++    
++# Horizontal Pod Autoscaler
++apiVersion: autoscaling/v2
++kind: HorizontalPodAutoscaler
++spec:
++  scaleTargetRef:
++    apiVersion: apps/v1
++    kind: Deployment
++    name: fleetforge-controller
++  minReplicas: 3
++  maxReplicas: 10
++  metrics:
++  - type: Resource
++    resource:
++      name: cpu
++      target:
++        type: Utilization
++        averageUtilization: 70
++  - type: Resource
++    resource:
++      name: memory
++      target:
++        type: Utilization
++        averageUtilization: 80
++```
++
++#### Caching Strategy
++
++- **Controller Cache**: Optimize informer cache for frequently accessed resources
++- **Rate Limiting**: Implement exponential backoff for reconciliation retries
++- **Batch Processing**: Group similar operations to reduce API server load
++
++### Operational Procedures
++
++#### Deployment Pipeline
++
++```mermaid
++graph LR
++    A[Code Commit] --> B[CI Tests]
++    B --> C[Security Scan]
++    C --> D[Build Images]
++    D --> E[Integration Tests]
++    E --> F[Staging Deploy]
++    F --> G[E2E Tests]
++    G --> H[Production Deploy]
++    H --> I[Health Checks]
++    I --> J[Rollback on Failure]
++```
++
++#### Incident Response
++
++```mermaid
++graph TB
++    A[Alert Triggered] --> B{Severity}
++    B -->|P1/P2| C[Page On-Call]
++    B -->|P3/P4| D[Create Ticket]
++    
++    C --> E[Acknowledge Alert]
++    E --> F[Initial Assessment]
++    F --> G[Incident Response]
++    G --> H[Mitigation Applied]
++    H --> I[Post-Incident Review]
++    
++    D --> J[Assign to Team]
++    J --> K[Investigate]
++    K --> L[Resolve]
++```
++
++## Implementation Phases
++
++### Phase 1: Security Hardening (Weeks 1-2)
++
++**Week 1: Container and Image Security**
++
++- Day 1-2: Implement vulnerability scanning in CI/CD
++- Day 3-4: Migrate to distroless base images
++- Day 5: Add container image signing with cosign
++
++**Week 2: Runtime Security**
++
++- Day 1-2: Implement Pod Security Standards
++- Day 3-4: Deploy Network Policies
++- Day 5: RBAC review and hardening
++
++### Phase 2: Observability Infrastructure (Weeks 3-4)
++
++**Week 3: Monitoring Setup**
++
++- Day 1-2: Deploy Prometheus stack with HA configuration
++- Day 3-4: Implement custom metrics in FleetForge components
++- Day 5: Create initial Grafana dashboards
++
++**Week 4: Alerting and Logging**
++
++- Day 1-2: Configure AlertManager with routing rules
++- Day 3-4: Deploy Loki stack for log aggregation
++- Day 5: Implement distributed tracing with Jaeger
++
++### Phase 3: Reliability Engineering (Weeks 5-6)
++
++**Week 5: High Availability**
++
++- Day 1-2: Configure leader election for controller
++- Day 3-4: Deploy multi-replica controller setup
++- Day 5: Test failover scenarios
++
++**Week 6: Backup and Recovery**
++
++- Day 1-2: Implement automated backup procedures
++- Day 3-4: Create disaster recovery runbooks
++- Day 5: Validate recovery procedures
++
++### Phase 4: Operational Excellence (Weeks 7-8)
++
++**Week 7: Automation and Procedures**
++
++- Day 1-2: Enhance deployment automation
++- Day 3-4: Create incident response procedures
++- Day 5: Develop on-call runbooks
++
++**Week 8: Validation and Training**
++
++- Day 1-2: Conduct load testing and performance validation
++- Day 3-4: Team training on new procedures
++- Day 5: Final production readiness review
++
++## Testing Strategy
++
++### Security Testing
++
++- **Static Analysis**: SonarQube integration for code quality
++- **Dependency Scanning**: GitHub Dependabot or Snyk
++- **Container Scanning**: Trivy in CI/CD pipeline
++- **Penetration Testing**: Third-party security assessment
++
++### Performance Testing
++
++- **Load Testing**: k6 scripts for API and reconciliation load
++- **Chaos Testing**: Chaos Mesh for failure injection
++- **Capacity Planning**: Resource usage under various loads
++- **Benchmark Suite**: Automated performance regression testing
++
++### Integration Testing
++
++- **End-to-End Tests**: Comprehensive user scenario testing
++- **Compatibility Testing**: Multiple Kubernetes versions
++- **Upgrade Testing**: Zero-downtime update validation
++- **Recovery Testing**: Backup and restore procedures
++
++## Risk Mitigation
++
++### Technical Risks
++
++**Risk**: Performance degradation during migration
++- **Mitigation**: Phased rollout with performance monitoring
++- **Rollback Plan**: Automated rollback triggers on SLI breach
++
++**Risk**: Security vulnerabilities in new dependencies
++- **Mitigation**: Automated vulnerability scanning and approval process
++- **Monitoring**: Continuous security monitoring post-deployment
++
++**Risk**: Observability overhead impacting performance
++- **Mitigation**: Sampling strategies and resource limits
++- **Validation**: Performance testing with full observability stack
++
++### Operational Risks
++
++**Risk**: Team unfamiliarity with new procedures
++- **Mitigation**: Comprehensive training and documentation
++- **Support**: Gradual transition with expert support
++
++**Risk**: Alerting fatigue from false positives
++- **Mitigation**: Careful threshold tuning and alert routing
++- **Iterative Improvement**: Regular alert review and optimization
++
++## Quality Assurance
++
++### Code Quality Gates
++
++- Unit test coverage >80%
++- Integration test coverage >70%
++- Security scan pass
++- Performance benchmark pass
++- Documentation complete
++
++### Deployment Gates
++
++- All tests passing
++- Security review approved
++- Performance validation complete
++- Monitoring alerts configured
++- Runbooks validated
++
++### Production Readiness Checklist
++
++- [ ] Security hardening complete
++- [ ] Monitoring and alerting operational
++- [ ] High availability configured
++- [ ] Backup and recovery validated
++- [ ] Team training complete
++- [ ] Documentation current
++- [ ] Incident procedures tested
++- [ ] Performance benchmarks met
++
++---
++
++**Review and Approval**:
++
++- **Technical Review**: [Pending]
++- **Security Review**: [Pending]
++- **Operations Review**: [Pending]
++- **Final Approval**: [Pending]
+\ No newline at end of file
+diff --git a/docs/contributing/docs-site-playbook.md b/docs/contributing/docs-site-playbook.md
+new file mode 100644
+index 0000000..39598fd
+--- /dev/null
++++ b/docs/contributing/docs-site-playbook.md
+@@ -0,0 +1,82 @@
++# Docs Site Playbook
++
++This playbook outlines how to build, preview, and customize the FleetForge documentation site powered by MkDocs Material.
++
++## Local Setup
++
++### Prerequisites
++
++```bash
++python3 -m venv .venv
++source .venv/bin/activate
++pip install -r requirements-docs.txt
++```
++
++> The `requirements-docs.txt` file is generated from `mkdocs.yml` plugin usage. Run `pip freeze > requirements-docs.txt` after adding plugins.
++
++### Live Preview
++
++```bash
++mkdocs serve --watch docs
++```
++
++The site is available at <http://localhost:8000>. The `--watch docs` flag ensures edits to Markdown or configuration files trigger an automatic reload.
++
++### Static Build
++
++```bash
++mkdocs build --clean
++```
++
++The static site is emitted to `site/`. Use the `--strict` flag during CI to surface broken links.
++
++## Deployment
++
++GitHub Actions publishes the site to GitHub Pages when changes land on `main`. The workflow performs:
++
++1. Dependency installation.
++2. `mkdocs build --strict` for validation.
++3. Deployment to the `gh-pages` branch using the Material-provided action.
++
++## Configuration Checklist
++
++- Update branding, color palette, and features in `mkdocs.yml`.
++- Maintain the navigation tree so every Markdown file appears exactly once.
++- Register additional Markdown extensions or plugins when new content patterns require them.
++- Add custom styling in `docs/stylesheets/extra.css` and reference it through `extra_css`.
++
++## Content Patterns
++
++- Use relative links for cross-references, for example `[Architecture](../architecture/design.md)`.
++- Prefer role-based call-to-action cards for landing pages. See the homepage for examples.
++- Embed diagrams with Mermaid fences and provide descriptive text nearby for accessibility.
++- Highlight critical workflows using Material admonitions (`!!! note`, `!!! warning`).
++
++## Quality Gates
++
++- Run `mkdocs build --strict` locally before opening a pull request.
++- Validate external links with `mkdocs build --strict --config-file mkdocs.yml --site-dir site` to ensure caches are rebuilt.
++- Lint Markdown with `markdownlint` or the repository's configured tooling.
++
++## Accessibility Guidelines
++
++- Maintain heading levels without skipping (H2 follows H1, etc.).
++- Provide text alternatives for diagrams and images.
++- Ensure call-to-action buttons use descriptive link labels.
++- Keep color contrast above WCAG 2.2 AA thresholds; use CSS variables supplied by MkDocs Material when possible.
++
++## Extending the Site
++
++- Add new sections by creating Markdown files within the appropriate directory and registering them in `nav`.
++- For experimental layouts, create an isolated page under `contributing/` before promoting it to the main navigation.
++- Update `docs/stylesheets/extra.css` for global style changes rather than inline HTML.
++
++## Troubleshooting
++
++| Symptom | Fix |
++| --- | --- |
++| Git plugins warn about missing history | Commit new documentation files or enable the provided fallback configuration. |
++| Mermaid diagram does not render | Confirm the Mermaid code block is fenced with ` ```mermaid ` and check for syntax errors. |
++| Navigation shows duplicate pages | Ensure each page appears once in the `nav` tree and remove conflicting filenames such as `README.md`. |
++
++For additional guidance, consult the [Material for MkDocs documentation](https://squidfunk.github.io/mkdocs-material/).
+diff --git a/docs/contributing/documentation-overview.md b/docs/contributing/documentation-overview.md
+new file mode 100644
+index 0000000..0582605
+--- /dev/null
++++ b/docs/contributing/documentation-overview.md
+@@ -0,0 +1,46 @@
++# Documentation Overview
++
++This guide explains how the FleetForge documentation set is organized and how new content should be added.
++
++## Information Architecture
++
++- `product/` — product strategy, requirements, and delivery plans.
++- `architecture/` — technical designs, diagrams, and production-readiness analyses.
++- `adr/` — Architecture Decision Records using the ADR-#### naming convention.
++- `ops/` — operational runbooks, monitoring guides, and on-call resources.
++- `research/` — supporting research notes and academic references.
++- `api-reference/` — reference material for Custom Resource Definitions and APIs.
++- `contributing/` — contributor guides, including this documentation overview and the docs site playbook.
++
++## Canonical Artifacts
++
++The following documents track the current state of the platform and product roadmap:
++
++| Location | Purpose |
++| --- | --- |
++| `product/prd.md` | Product requirements document for the elasticity MVP. |
++| `product/requirements.md` | Long-term platform requirements in EARS notation. |
++| `product/tasks.md` | Implementation plan aligned to the specification-driven workflow. |
++| `architecture/design.md` | System architecture overview and component relationships. |
++| `ops/runbook-elasticity-demo.md` | Authoritative runbook for the elasticity demonstration. |
++| `adr/ADR-0001-initial-mvp-scope.md` | MVP scope decision record and precedent. |
++
++## Contribution Expectations
++
++1. Create or update documentation alongside the code change it describes.
++2. Reference user stories or requirement IDs directly in the text where practical.
++3. Update traceability tables or task backlogs when requirements evolve.
++4. Record strategic or architectural decisions as new ADRs before implementation.
++
++## Traceability Practices
++
++- Requirements carry identifiers in the form `REQ-###` and map to design and tasks.
++- Product stories (`GH-###`) must link to the relevant requirement entries.
++- Use tables or callouts to highlight dependencies that span multiple teams or components.
++
++## Upcoming Additions
++
++- Production incident response playbook.
++- Grafana dashboard catalog and JSON exports.
++- Boundary subdivision algorithm specification.
++- Observability roll-out plan aligned with production readiness criteria.
+diff --git a/docs/getting-started/development.md b/docs/getting-started/development.md
+new file mode 100644
+index 0000000..9865157
+--- /dev/null
++++ b/docs/getting-started/development.md
+@@ -0,0 +1,277 @@
++# Development Guide
++
++Set up your development environment for contributing to FleetForge.
++
++## Prerequisites
++
++- Go 1.21 or later
++- Docker and Docker Compose
++- kubectl (for Kubernetes cluster interaction)  
++- kind (for local Kubernetes development)
++- make (for running build commands)
++
++## Environment Setup
++
++### 1. Clone and Initialize
++
++```bash
++git clone https://github.com/astrosteveo/fleetforge.git
++cd fleetforge
++go mod tidy
++```
++
++### 2. Create Development Cluster
++
++```bash
++make cluster-create
++```
++
++This creates a multi-node Kind cluster named `fleetforge-dev`.
++
++### 3. Install and Deploy
++
++```bash
++# Install CRDs
++make install
++
++# Build and deploy
++make build build-cell
++make cluster-load
++make deploy
++```
++
++## Development Workflow
++
++### Code Organization
++
++| Directory | Purpose |
++|-----------|---------|
++| `api/v1/` | API types and CRD definitions |
++| `pkg/controllers/` | Kubernetes controller logic |
++| `pkg/cell/` | Cell simulation engine |
++| `cmd/` | Main application binaries |
++| `config/` | Kubernetes manifests and samples |
++
++### Making Changes
++
++1. **Edit Source Code**
++   - Update controller logic in `pkg/controllers/`
++   - Modify cell behavior in `pkg/cell/`
++   - Add new API fields in `api/v1/`
++
++2. **Test Changes**
++   ```bash
++   # Run unit tests
++   make test
++   
++   # Test specific packages
++   go test ./pkg/cell/ -v
++   ```
++
++3. **Build and Deploy**
++   ```bash
++   make build build-cell
++   make cluster-load
++   make deploy
++   ```
++
++4. **Integration Testing**
++   ```bash
++   # Apply test WorldSpec
++   kubectl apply -f config/samples/fleetforge_v1_worldspec.yaml
++   
++   # Watch status
++   kubectl get worldspecs -w
++   kubectl get pods -l app=fleetforge-cell -w
++   ```
++
++## Testing Strategy
++
++### Unit Tests
++
++Run comprehensive test suite:
++
++```bash
++make test
++```
++
++Test individual components:
++
++```bash
++# Controller tests
++go test ./pkg/controllers/ -v
++
++# Cell simulation tests  
++go test ./pkg/cell/ -v
++
++# API validation tests
++go test ./api/v1/ -v
++```
++
++### Integration Tests
++
++Validate end-to-end functionality:
++
++```bash
++# Create test world
++kubectl apply -f config/samples/fleetforge_v1_worldspec_large.yaml
++
++# Verify world initialization
++kubectl wait --for=condition=Ready worldspec/worldspec-sample-large --timeout=60s
++
++# Check cell pods are created
++kubectl get pods -l app=fleetforge-cell
++
++# Test cell health endpoints
++kubectl port-forward <cell-pod-name> 8081:8081 &
++curl http://localhost:8081/health
++curl http://localhost:8081/ready  
++curl http://localhost:8081/status
++```
++
++## Debugging
++
++### Controller Issues
++
++Check controller logs:
++
++```bash
++kubectl logs deployment/fleetforge-controller-manager -n fleetforge-system -f
++```
++
++Verify RBAC permissions:
++
++```bash
++kubectl auth can-i create worldspecs --as=system:serviceaccount:fleetforge-system:fleetforge-controller-manager
++```
++
++### Cell Issues
++
++Debug individual cells:
++
++```bash
++# Get cell pod logs
++kubectl logs <cell-pod-name> -f
++
++# Exec into cell container
++kubectl exec -it <cell-pod-name> -- /bin/sh
++
++# Check cell metrics
++kubectl port-forward <cell-pod-name> 8080:8080 &
++curl http://localhost:8080/metrics
++```
++
++### Common Solutions
++
++#### CRD Installation Issues
++
++```bash
++make uninstall
++make install
++kubectl get crd worldspecs.fleetforge.io
++```
++
++#### Image Pull Problems
++
++```bash
++make cluster-load
++kubectl get pods -n fleetforge-system
++```
++
++#### Permission Errors
++
++```bash
++kubectl get clusterrole fleetforge-manager-role -o yaml
++kubectl describe serviceaccount fleetforge-controller-manager -n fleetforge-system
++```
++
++## Code Quality
++
++### Linting and Formatting
++
++```bash
++# Format code
++make fmt
++
++# Run linter
++make vet
++
++# Generate manifests and code
++make manifests generate
++```
++
++### Pre-commit Checks
++
++Before submitting PRs:
++
++```bash
++# Run full test suite
++make test
++
++# Build all binaries
++make build build-cell
++
++# Verify clean generation
++make manifests generate
++git diff --exit-code
++```
++
++## Architecture Overview
++
++FleetForge implements the Kubernetes operator pattern:
++
++```mermaid
++graph TB
++    A[WorldSpec CRD] --> B[WorldSpec Controller]
++    B --> C[Cell Pods]
++    C --> D[Cell Manager]
++    D --> E[AOI System]
++    E --> F[Session Tracking]
++    
++    G[Metrics] --> H[Prometheus]
++    I[Events] --> J[Kubernetes API]
++```
++
++### Key Components
++
++- **WorldSpec Controller**: Reconciles desired vs actual state
++- **Cell Manager**: Handles cell lifecycle and boundaries
++- **AOI System**: Manages Areas of Interest for spatial queries
++- **Session Tracking**: Tracks entities across cell boundaries
++
++## Contributing Guidelines
++
++### Code Style
++
++- Follow Go conventions and idioms
++- Use meaningful variable and function names
++- Add comments for complex logic and public APIs
++- Keep functions focused and testable
++
++### Testing Requirements
++
++- Unit tests for all new functionality
++- Integration tests for controller behavior
++- Test both success and error scenarios
++- Maintain >80% test coverage
++
++### Documentation
++
++- Update relevant documentation for changes
++- Add examples for new features
++- Document breaking changes in commit messages
++- Update API reference for schema changes
++
++### Pull Request Process
++
++1. Create feature branch from `main`
++2. Implement changes with tests
++3. Update documentation
++4. Verify all tests pass
++5. Submit PR with clear description
++
++For detailed project information, see:
++
++- **[Architecture Design](../architecture/design.md)**: System design details
++- **[API Reference](../api-reference/index.md)**: Complete API documentation  
++- **[Implementation Tasks](../product/tasks.md)**: Development roadmap
+\ No newline at end of file
+diff --git a/docs/getting-started/installation.md b/docs/getting-started/installation.md
+new file mode 100644
+index 0000000..c86a634
+--- /dev/null
++++ b/docs/getting-started/installation.md
+@@ -0,0 +1,142 @@
++# Installation
++
++This guide covers various installation methods for FleetForge in different environments.
++
++## Production Installation
++
++### Kubernetes Cluster Requirements
++
++- Kubernetes 1.28 or later
++- RBAC enabled
++- At least 2 GB RAM and 2 CPU cores available
++- Storage class for persistent volumes (if using persistent storage)
++
++### Install via Helm (Recommended)
++
++Coming soon! Helm charts are planned for the next release.
++
++### Install via Manifests
++
++```bash
++# Install CRDs
++kubectl apply -f https://github.com/astrosteveo/fleetforge/releases/latest/download/crds.yaml
++
++# Install controller
++kubectl apply -f https://github.com/astrosteveo/fleetforge/releases/latest/download/controller.yaml
++
++# Verify installation
++kubectl get pods -n fleetforge-system
++```
++
++## Development Installation
++
++For development and testing, use the local development setup:
++
++```bash
++git clone https://github.com/astrosteveo/fleetforge.git
++cd fleetforge
++make cluster-create
++make install
++make deploy
++```
++
++See the [Quick Start guide](quick-start.md) for detailed development setup instructions.
++
++## Configuration
++
++### Environment Variables
++
++| Variable | Description | Default |
++|----------|-------------|---------|
++| `METRICS_ADDR` | Metrics server bind address | `:8080` |
++| `HEALTH_PROBE_ADDR` | Health probe bind address | `:8081` |
++| `LEADER_ELECT` | Enable leader election | `false` |
++
++### Custom Resource Configuration
++
++Configure FleetForge behavior through WorldSpec resources:
++
++```yaml
++apiVersion: fleetforge.io/v1
++kind: WorldSpec
++metadata:
++  name: my-world
++spec:
++  region:
++    width: 1000
++    height: 1000
++  cellSize: 100
++  maxPlayersPerCell: 50
++```
++
++## Monitoring Setup
++
++### Prometheus Metrics
++
++FleetForge exposes Prometheus metrics on `:8080/metrics`. Configure your Prometheus to scrape:
++
++```yaml
++- job_name: 'fleetforge-controller'
++  static_configs:
++  - targets: ['fleetforge-controller-manager.fleetforge-system.svc.cluster.local:8080']
++```
++
++### Grafana Dashboard
++
++Import the FleetForge Grafana dashboard:
++
++```bash
++kubectl apply -f https://github.com/astrosteveo/fleetforge/releases/latest/download/grafana-dashboard.json
++```
++
++## Verification
++
++Verify your installation is working correctly:
++
++```bash
++# Check controller status
++kubectl get deployment fleetforge-controller-manager -n fleetforge-system
++
++# Create test WorldSpec
++kubectl apply -f - <<EOF
++apiVersion: fleetforge.io/v1
++kind: WorldSpec
++metadata:
++  name: test-world
++spec:
++  region:
++    width: 200
++    height: 200
++  cellSize: 100
++EOF
++
++# Verify world is ready
++kubectl wait --for=condition=Ready worldspec/test-world --timeout=60s
++
++# Clean up test
++kubectl delete worldspec test-world
++```
++
++## Uninstallation
++
++To completely remove FleetForge:
++
++```bash
++# Remove all WorldSpecs first
++kubectl delete worldspecs --all
++
++# Remove controller
++kubectl delete -f https://github.com/astrosteveo/fleetforge/releases/latest/download/controller.yaml
++
++# Remove CRDs
++kubectl delete -f https://github.com/astrosteveo/fleetforge/releases/latest/download/crds.yaml
++```
++
++!!! warning "Data Loss"
++    Removing CRDs will delete all WorldSpec resources. Make sure to backup any important configurations first.
++
++## Next Steps
++
++- **[Quick Start](quick-start.md)**: Create your first world
++- **[Development Guide](development.md)**: Set up development environment
++- **[API Reference](../api-reference/index.md)**: Learn about WorldSpec configuration options
+\ No newline at end of file
+diff --git a/docs/getting-started/quick-start.md b/docs/getting-started/quick-start.md
+new file mode 100644
+index 0000000..831616c
+--- /dev/null
++++ b/docs/getting-started/quick-start.md
+@@ -0,0 +1,107 @@
++# Quick Start
++
++Get FleetForge up and running in minutes with this quick start guide.
++
++## Prerequisites
++
++- Go 1.21 or later
++- Docker and Docker Compose
++- kubectl (for Kubernetes cluster interaction)
++- kind (for local Kubernetes development)
++- make (for running build commands)
++
++## Installation
++
++### 1. Clone the Repository
++
++```bash
++git clone https://github.com/astrosteveo/fleetforge.git
++cd fleetforge
++```
++
++### 2. Set Up Local Development Cluster
++
++```bash
++# Create a local Kind cluster
++make cluster-create
++
++# Verify cluster is running
++kubectl cluster-info
++```
++
++### 3. Install FleetForge
++
++```bash
++# Build the project
++make build build-cell
++
++# Install CRDs
++make install
++
++# Deploy controller
++make deploy
++```
++
++### 4. Create Your First World
++
++```bash
++# Apply a sample WorldSpec
++kubectl apply -f config/samples/fleetforge_v1_worldspec.yaml
++
++# Check the status
++kubectl get worldspecs -o wide
++kubectl describe worldspec worldspec-sample
++```
++
++### 5. Verify Everything Works
++
++```bash
++# Watch the created pods
++kubectl get pods -l app=fleetforge-cell
++
++# Check controller logs
++kubectl logs -f deployment/fleetforge-controller-manager -n fleetforge-system
++
++# Verify WorldSpec status
++kubectl get worldspec worldspec-sample -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
++# Should return: True
++```
++
++## What's Next?
++
++- **[Development Guide](development.md)**: Set up your development environment
++- **[Installation Guide](installation.md)**: Production installation options
++- **[Architecture Overview](../architecture/design.md)**: Understanding FleetForge's design
++- **[API Reference](../api-reference/index.md)**: Complete API documentation
++
++## Troubleshooting
++
++### Common Issues
++
++**Cluster Creation Fails**
++```bash
++# Clean up and retry
++make cluster-delete
++make cluster-create
++```
++
++**CRD Installation Issues**
++```bash
++# Check CRD status
++kubectl get crd worldspecs.fleetforge.io
++
++# Reinstall if needed
++make uninstall
++make install
++```
++
++**Controller Not Starting**
++```bash
++# Check controller logs
++kubectl logs deployment/fleetforge-controller-manager -n fleetforge-system
++
++# Verify RBAC permissions
++kubectl auth can-i create worldspecs --as=system:serviceaccount:fleetforge-system:fleetforge-controller-manager
++```
++
++For more detailed troubleshooting, see our [Operations Guide](../ops/index.md).
+\ No newline at end of file
+diff --git a/docs/index.md b/docs/index.md
+new file mode 100644
+index 0000000..b81fb4b
+--- /dev/null
++++ b/docs/index.md
+@@ -0,0 +1,84 @@
++# FleetForge Documentation
++
++FleetForge helps studios operate elastic, low-latency worlds on Kubernetes. Explore product direction, architecture, and runbooks from a single, curated hub.
++
++::: {.hero}
++
++## Build elastic game worlds with confidence
++
++Deploy the FleetForge operator, partition worlds into adaptive cells, and keep player sessions stable even during demand spikes.
++
++[Start the quick start](getting-started/quick-start.md){ .md-button .md-button--primary }
++[Review the architecture](architecture/design.md){ .md-button }
++
++:::
++
++## Why teams choose FleetForge
++
++::: {.grid .cards}
++
++- :material-swap-horizontal-circle: **Elastic cell orchestration**
++
++    Autoscale world regions in real time with guardrails on cost and latency.  
++    [:octicons-arrow-right-16: Explore the controller](architecture/design.md)
++
++- :material-map-search-outline: **Intelligent world partitioning**
++
++    Balance player density across shards using adaptive spatial boundaries.  
++    [:octicons-arrow-right-16: See WorldSpec](api-reference/index.md)
++
++- :material-shield-check: **Production readiness baked in**
++
++    Apply observability, security, and reliability checklists before each launch.  
++    [:octicons-arrow-right-16: Follow the readiness plan](product/production-readiness-plan.md)
++
++:::
++
++## Choose your path
++
++::: {.grid .cards}
++
++- :material-hammer-wrench: **Platform engineers**
++
++    Stand up the operator locally, integrate with CI, and ship safe upgrades.  
++    [:octicons-arrow-right-16: Development guide](getting-started/development.md)
++
++- :material-chart-line: **Live operations teams**
++
++    Monitor elasticity, respond to incidents, and share dashboards with stakeholders.  
++    [:octicons-arrow-right-16: Operations hub](ops/index.md)
++
++- :material-lightbulb-on: **Product leaders**
++
++    Track specification-driven delivery, roadmap, and launch approvals.  
++    [:octicons-arrow-right-16: Product planning](product/prd.md)
++
++:::
++
++## Launch readiness snapshot
++
++| Capability | Status | Notes |
++| --- | --- | --- |
++| WorldSpec CRD | ✅ Complete | Supports core boundary management and cell templates. |
++| Cell lifecycle | ✅ Complete | Handles create, scale, and remove operations. |
++| Elastic splitting | 🚧 In progress | Production readiness design drafted; implementation underway. |
++| Multi-tenant vcluster | 🚧 In progress | Tracked in `REQ-204` and aligned to rollout plan. |
++| Observability suite | 📋 Planned | Metrics, dashboards, and alerts outlined in operations runbooks. |
++
++## Architecture at a glance
++
++```mermaid
++graph TB
++    A[WorldSpec CRD] --> B[WorldSpec Controller]
++    B --> C[Cell Pods]
++    C --> D[Cell Simulator]
++    D --> E[Metrics & Events]
++    E --> F[Observability Stack]
++```
++
++## Stay connected
++
++- Browse the full navigation for deep dives and runbooks.
++- Report issues or feature requests on [GitHub Issues](https://github.com/astrosteveo/fleetforge/issues).
++- Join the conversation on [GitHub Discussions](https://github.com/astrosteveo/fleetforge/discussions).
++- Contribute with confidence using the [docs site playbook](contributing/docs-site-playbook.md).
+\ No newline at end of file
+diff --git a/docs/ops/alerts.md b/docs/ops/alerts.md
+new file mode 100644
+index 0000000..5dbd9fd
+--- /dev/null
++++ b/docs/ops/alerts.md
+@@ -0,0 +1,42 @@
++# Alerting and Escalations
++
++This guide documents alert rules, routing, and escalation practices for FleetForge.
++
++## Alert Classification
++
++| Priority | Definition | Response Time |
++| --- | --- | --- |
++| P1 | Player-impacting outage or critical control plane failure. | Immediate, page primary on-call. |
++| P2 | Degraded experience or redundancy loss. | Within 30 minutes. |
++| P3 | Operational hygiene or capacity warnings. | Within the same business day. |
++
++## Core Alert Rules
++
++- **World Reconciliation Stalled** — Triggered when no successful reconciliations occur for five minutes.
++- **Cell Availability Drop** — Fires when cell availability falls below 99.5% for two consecutive periods.
++- **Controller Error Surge** — Elevated error rate over 5% for more than ten minutes.
++
++## Routing Policy
++
++1. PagerDuty is the primary incident response channel.
++2. Send P1 and P2 alerts to the `fleetforge-oncall` schedule with SMS and voice fallbacks.
++3. Deliver P3 alerts to the shared Slack channel `#fleetforge-ops`.
++
++## Escalation Flow
++
++1. Acknowledge the alert within the response time.
++2. Follow the relevant runbook in the `ops/` section.
++3. If unresolved after 15 minutes, engage the incident commander and product lead.
++4. Document the outcome in the retrospective template.
++
++## Noise Reduction Checklist
++
++- Tune alert thresholds quarterly based on historical performance.
++- Annotate maintenance windows to suppress known noise.
++- Prefer multi-signal alerts (metrics + logs) for production paging.
++
++## Reference Material
++
++- [Monitoring and Observability](monitoring.md)
++- [Observability Dashboards](dashboards.md)
++- [Elasticity Demo Runbook](runbook-elasticity-demo.md)
+diff --git a/docs/ops/dashboards.md b/docs/ops/dashboards.md
+new file mode 100644
+index 0000000..de523f7
+--- /dev/null
++++ b/docs/ops/dashboards.md
+@@ -0,0 +1,44 @@
++# Observability Dashboards
++
++Grafana dashboards provide fast insight into FleetForge health and performance.
++
++## Core Dashboards
++
++### Controller Overview
++
++Focuses on reconciliation throughput, queue depth, and error surfaces.
++
++- **Reconciliation Rate** — Charts reconcile operations per minute.
++- **Queue Depth** — Highlights backlog risk when the operator falls behind.
++- **Failure Heatmap** — Groups errors by world namespace for quick triage.
++
++### Cell Lifecycle
++
++Captures the health of running cells and pending transitions.
++
++- **Cell Count Trend** — Shows total cells by world and phase.
++- **Pending vs. Ready** — Indicates scheduling or readiness bottlenecks.
++- **Resource Footprint** — Aggregates CPU, memory, and network usage.
++
++### Player Experience (Planned)
++
++- Latency percentiles across worlds.
++- Active sessions vs. capacity.
++- Regional distribution of sessions.
++
++## Dashboard Delivery
++
++1. Store dashboard JSON under `dashboards/` in the repository.
++2. Use the Grafana provisioning mechanism or Terraform to load dashboards.
++3. Tag dashboards with `fleetforge` and `slo` for discoverability.
++
++## Customizing Visuals
++
++- Align axes with standard units (seconds, bytes, requests प्रति minute) to aid comparison.
++- Use color palettes that pass WCAG AA contrast ratios.
++- Provide short panel descriptions so keyboard users can navigate quickly.
++
++## Related Resources
++
++- [Monitoring and Observability](monitoring.md)
++- [Alerting and Escalations](alerts.md)
+diff --git a/docs/ops/index.md b/docs/ops/index.md
+new file mode 100644
+index 0000000..5dacc4d
+--- /dev/null
++++ b/docs/ops/index.md
+@@ -0,0 +1,51 @@
++# Operations Index
++
++This section contains operational guides, runbooks, and SRE documentation for FleetForge.
++
++## Runbooks
++
++Operational procedures for common tasks:
++
++- [Elasticity Demo Runbook](runbook-elasticity-demo.md)
++- Incident response playbook *(planned)*
++- Backup and recovery guide *(planned)*
++- Scaling operations guide *(planned)*
++
++## Monitoring and Alerting
++
++- **[Metrics and KPIs](monitoring.md)** — Key performance indicators and SLOs.
++- **[Grafana Dashboards](dashboards.md)** — Visualization and monitoring setup.
++- **[Alert Configuration](alerts.md)** — Alert rules and escalation procedures.
++
++## Troubleshooting
++
++Common issues and their solutions:
++
++- **Controller Issues** - Debugging WorldSpec controller problems
++- **Cell Lifecycle** - Troubleshooting cell creation and management
++- **Network Connectivity** - Service discovery and inter-cell communication
++- **Performance Issues** - Identifying and resolving performance bottlenecks
++
++## Maintenance Procedures
++
++- **Cluster Upgrades** - Kubernetes cluster maintenance
++- **Application Updates** - FleetForge component upgrades
++- **Certificate Management** - TLS certificate rotation and management
++- **Log Management** - Log retention and analysis
++
++## Production Readiness
++
++- **Security Checklist** - Security configuration validation
++- **Performance Benchmarks** - Expected performance characteristics
++- **Capacity Planning** - Resource planning and scaling guidelines
++- **Disaster Recovery** - Business continuity procedures
++
++## Getting Help
++
++- **Escalation Matrix** - Who to contact for different types of issues
++- **External Dependencies** - Third-party service contacts and SLAs
++- **Internal Resources** - Team contacts and expertise areas
++
++---
++
++*This operations section will be expanded as FleetForge moves toward production deployment.*
+\ No newline at end of file
+diff --git a/docs/ops/monitoring.md b/docs/ops/monitoring.md
+new file mode 100644
+index 0000000..19bd64f
+--- /dev/null
++++ b/docs/ops/monitoring.md
+@@ -0,0 +1,34 @@
++# Monitoring and Observability
++
++This guide outlines how to monitor FleetForge clusters and interpret key service-level indicators.
++
++## Key Service Level Indicators
++
++| Indicator | Target | Rationale |
++| --- | --- | --- |
++| Control plane reconciliation latency | p95 < 1s | Ensures WorldSpec updates propagate quickly. |
++| Cell availability | ≥ 99.9% | Guarantees capacity for player sessions. |
++| Controller error rate | < 0.1% | Flags reconciliation loops that require operator attention. |
++
++## Metrics Pipeline
++
++1. **Collection** — The controller and cell simulators expose Prometheus metrics under `/metrics`.
++2. **Scraping** — Use the provided `ServiceMonitor` or scrape configuration to ingest metrics.
++3. **Storage** — Persist metrics in Prometheus or a long-term store such as Thanos.
++4. **Visualization** — Connect Grafana dashboards documented in [Dashboards](dashboards.md).
++
++## Alerting Hooks
++
++- Emit alerts based on SLO thresholds with a five-minute rolling window.
++- Route high-priority alerts to the on-call rotation via PagerDuty.
++- Downgrade noisy alerts to notifications and tune with historical data.
++
++## Runbook Links
++
++- [Elasticity Demo Runbook](runbook-elasticity-demo.md)
++- [Alert Configuration](alerts.md)
++
++## Next Steps
++
++- Automate ServiceMonitor deployment as part of the Helm chart.
++- Add golden signals for API latency and reconciliation backlog.
+diff --git a/docs/product/production-readiness-plan.md b/docs/product/production-readiness-plan.md
+new file mode 100644
+index 0000000..0400a38
+--- /dev/null
++++ b/docs/product/production-readiness-plan.md
+@@ -0,0 +1,306 @@
++# Production Readiness Plan: FleetForge Platform
++
++## Document Information
++
++- **Project**: FleetForge Production Readiness Initiative
++- **Version**: 1.0
++- **Date**: September 25, 2025
++- **Status**: Draft - Pending Team Review and Approval
++- **Authors**: Development Team
++- **Reviewers**: [To be assigned]
++- **Approvers**: [To be assigned]
++
++## Executive Summary
++
++This document defines the comprehensive plan to transition FleetForge from MVP development state to production-ready platform. The plan addresses security, observability, reliability, compliance, and operational requirements necessary for enterprise deployment.
++
++### Business Objectives
++
++- **Risk Mitigation**: Eliminate security vulnerabilities and operational risks
++- **Operational Excellence**: Enable 24/7 operations with proper monitoring and incident response
++- **Compliance**: Meet enterprise security and governance standards
++- **User Confidence**: Provide reliable, well-documented platform for adoption
++- **Scalability**: Ensure platform can handle production workloads and growth
++
++### Success Criteria
++
++- ✅ Pass enterprise security audit
++- ✅ Achieve 99.9% uptime SLA capability
++- ✅ Complete disaster recovery validation
++- ✅ Team sign-off on all production procedures
++- ✅ Successful production pilot deployment
++
++## Requirements (EARS Notation)
++
++### Security Requirements
++
++**REQ-SEC-001**: WHEN the FleetForge controller starts, THE SYSTEM SHALL validate all RBAC permissions are minimal and follow least-privilege principle
++
++**REQ-SEC-002**: WHEN container images are built, THE SYSTEM SHALL scan for vulnerabilities and block deployment if critical CVEs are detected
++
++**REQ-SEC-003**: WHEN secrets are required, THE SYSTEM SHALL use Kubernetes secrets or external secret management, never hardcoded values
++
++**REQ-SEC-004**: WHEN network traffic occurs between components, THE SYSTEM SHALL enforce network policies that deny unauthorized communication
++
++**REQ-SEC-005**: WHEN pods are deployed, THE SYSTEM SHALL enforce restricted pod security standards
++
++### Observability Requirements
++
++**REQ-OBS-001**: WHEN system components are running, THE SYSTEM SHALL expose Prometheus-compatible metrics for all critical operations
++
++**REQ-OBS-002**: WHEN error conditions occur, THE SYSTEM SHALL emit structured logs with correlation IDs for tracing
++
++**REQ-OBS-003**: WHEN SLI thresholds are breached, THE SYSTEM SHALL trigger alerts within 60 seconds
++
++**REQ-OBS-004**: WHEN incidents occur, THE SYSTEM SHALL provide distributed tracing capabilities for root cause analysis
++
++**REQ-OBS-005**: WHEN audit events happen, THE SYSTEM SHALL log all administrative actions with timestamps and actor identification
++
++### Reliability Requirements
++
++**REQ-REL-001**: WHEN the controller leader fails, THE SYSTEM SHALL elect a new leader within 30 seconds
++
++**REQ-REL-002**: WHEN nodes fail, THE SYSTEM SHALL reschedule affected workloads within 2 minutes
++
++**REQ-REL-003**: WHEN resource limits are reached, THE SYSTEM SHALL gracefully degrade rather than crash
++
++**REQ-REL-004**: WHEN updates are deployed, THE SYSTEM SHALL support zero-downtime rolling updates
++
++**REQ-REL-005**: WHEN data corruption occurs, THE SYSTEM SHALL restore from backup within 4 hours (RTO)
++
++### Performance Requirements
++
++**REQ-PERF-001**: WHEN WorldSpec is created, THE SYSTEM SHALL reconcile and create initial cells within 30 seconds
++
++**REQ-PERF-002**: WHEN system is under load, THE SYSTEM SHALL maintain reconciliation latency under 5 seconds at 95th percentile
++
++**REQ-PERF-003**: WHEN scaling occurs, THE SYSTEM SHALL support up to 1000 concurrent WorldSpecs per cluster
++
++**REQ-PERF-004**: WHEN resource usage grows, THE SYSTEM SHALL use less than 500MB memory per 100 active cells
++
++### Compliance Requirements
++
++**REQ-COMP-001**: THE SYSTEM SHALL maintain audit logs for all CRD operations for minimum 90 days
++
++**REQ-COMP-002**: THE SYSTEM SHALL support backup and restore procedures with documented recovery time objectives
++
++**REQ-COMP-003**: THE SYSTEM SHALL provide role-based access control that can be integrated with enterprise identity systems
++
++**REQ-COMP-004**: THE SYSTEM SHALL document all data flows and storage requirements for compliance review
++
++## Production Readiness Phases
++
++### Phase 1: Security Hardening (Weeks 1-2)
++**Objective**: Eliminate security vulnerabilities and implement security best practices
++
++**Key Deliverables**:
++- Container image vulnerability scanning in CI/CD
++- RBAC review and hardening
++- Network policies implementation
++- Secret management integration
++- Pod security standards enforcement
++- Security audit documentation
++
++### Phase 2: Observability Infrastructure (Weeks 3-4)
++**Objective**: Implement comprehensive monitoring, logging, and alerting
++
++**Key Deliverables**:
++- Prometheus monitoring stack deployment
++- Grafana dashboards for all components
++- Structured logging implementation
++- Alert manager rules and escalation
++- Distributed tracing setup
++- SLI/SLO definitions and monitoring
++
++### Phase 3: Reliability Engineering (Weeks 5-6)
++**Objective**: Ensure high availability and disaster recovery capabilities
++
++**Key Deliverables**:
++- High availability controller configuration
++- Backup and restore procedures
++- Chaos engineering tests
++- Load testing and capacity planning
++- Disaster recovery runbooks
++- Performance optimization
++
++### Phase 4: Operational Excellence (Weeks 7-8)
++**Objective**: Complete operational procedures and documentation
++
++**Key Deliverables**:
++- Production deployment automation
++- Incident response procedures
++- On-call runbooks and training
++- Release pipeline automation
++- Documentation reorganization
++- Team training completion
++
++## Risk Assessment
++
++### High-Risk Items
++
++**Risk**: Security vulnerabilities in production deployment
++- **Impact**: High - Data breach or system compromise
++- **Likelihood**: Medium
++- **Mitigation**: Comprehensive security scanning and penetration testing
++
++**Risk**: Insufficient monitoring leading to undetected failures
++- **Impact**: High - Service degradation or outages
++- **Likelihood**: Medium  
++- **Mitigation**: Redundant monitoring and proactive alerting
++
++**Risk**: Data loss due to inadequate backup procedures
++- **Impact**: Critical - Permanent data loss
++- **Likelihood**: Low
++- **Mitigation**: Automated backup testing and recovery validation
++
++### Medium-Risk Items
++
++**Risk**: Performance degradation under production load
++- **Impact**: Medium - User experience issues
++- **Likelihood**: Medium
++- **Mitigation**: Load testing and performance benchmarking
++
++**Risk**: Incomplete operational procedures causing incidents
++- **Impact**: Medium - Extended incident resolution
++- **Likelihood**: High
++- **Mitigation**: Comprehensive runbook development and team training
++
++## Resource Requirements
++
++### Team Allocation
++
++- **Lead Architect**: 1 FTE - Overall coordination and technical decisions
++- **Security Engineer**: 1 FTE - Security hardening and compliance
++- **DevOps Engineer**: 1 FTE - Infrastructure and monitoring setup
++- **Backend Engineer**: 1 FTE - Code changes and optimization
++- **Technical Writer**: 0.5 FTE - Documentation and procedures
++
++### Infrastructure Requirements
++
++- **Staging Environment**: Production-like cluster for testing
++- **Monitoring Stack**: Prometheus, Grafana, AlertManager deployment
++- **CI/CD Enhancement**: Security scanning tools and automation
++- **Backup Infrastructure**: Automated backup and restore capabilities
++
++### Budget Considerations
++
++- **Cloud Resources**: Additional compute and storage for monitoring
++- **Security Tools**: Vulnerability scanning and compliance tools
++- **Training**: Team training on new procedures and tools
++- **External Review**: Optional third-party security audit
++
++## Success Metrics
++
++### Technical Metrics
++
++- **Security**: Zero critical vulnerabilities in production images
++- **Availability**: 99.9% uptime measured over 30 days
++- **Performance**: 95th percentile reconciliation latency < 5 seconds
++- **Recovery**: RTO < 4 hours, RPO < 1 hour for disaster scenarios
++
++### Operational Metrics
++
++- **Documentation**: 100% of procedures documented and tested
++- **Training**: 100% of team members certified on procedures
++- **Automation**: 95% of operational tasks automated
++- **Compliance**: Pass all security and compliance audits
++
++### Quality Gates
++
++**Phase Completion Criteria**:
++- All requirements implemented and tested
++- Peer review completed for all deliverables
++- Security review passed
++- Performance benchmarks met
++- Documentation complete and approved
++
++**Production Go/No-Go Criteria**:
++- All security requirements validated
++- Monitoring and alerting operational
++- Backup and recovery tested
++- Team trained and certified
++- Pilot deployment successful
++
++## Timeline and Dependencies
++
++```mermaid
++gantt
++    title Production Readiness Timeline
++    dateFormat  YYYY-MM-DD
++    section Phase 1: Security
++    Security Hardening    :active, sec1, 2025-09-25, 14d
++    RBAC Review          :sec2, 2025-09-25, 7d
++    Vulnerability Scanning :sec3, after sec2, 7d
++    
++    section Phase 2: Observability
++    Monitoring Setup     :obs1, after sec1, 14d
++    Alerting Rules      :obs2, after obs1, 7d
++    Dashboard Creation  :obs3, after obs2, 7d
++    
++    section Phase 3: Reliability
++    HA Configuration    :rel1, after obs1, 14d
++    Backup Procedures   :rel2, after rel1, 7d
++    Load Testing       :rel3, after rel2, 7d
++    
++    section Phase 4: Operations
++    Documentation      :ops1, after rel1, 14d
++    Team Training      :ops2, after ops1, 7d
++    Production Pilot   :milestone, after ops2, 1d
++```
++
++## Approval Process
++
++### Review Stages
++
++1. **Technical Review**: Lead Architect and Senior Engineers
++2. **Security Review**: Security Engineer and CISO (if applicable)
++3. **Operations Review**: DevOps Engineer and Operations Manager
++4. **Executive Approval**: Engineering Director and Product Owner
++
++### Approval Criteria
++
++- [ ] All requirements clearly defined and testable
++- [ ] Timeline and resource allocation realistic and approved
++- [ ] Risk mitigation strategies adequate
++- [ ] Success criteria measurable and achievable
++- [ ] Budget and resources allocated
++- [ ] Team commitment and availability confirmed
++
++### Sign-off Requirements
++
++**Technical Approval**:
++- [ ] Lead Architect: _________________________ Date: _______
++- [ ] Senior Backend Engineer: ________________ Date: _______
++- [ ] DevOps Engineer: _______________________ Date: _______
++
++**Security Approval**:
++- [ ] Security Engineer: _____________________ Date: _______
++- [ ] Security Review Board: _________________ Date: _______
++
++**Management Approval**:
++- [ ] Engineering Director: __________________ Date: _______
++- [ ] Product Owner: ________________________ Date: _______
++
++### Change Management
++
++**Document Updates**: All changes to this plan require approval from original approvers
++
++**Scope Changes**: Major scope changes require re-approval process
++
++**Timeline Changes**: Schedule changes > 1 week require management approval
++
++## Next Steps
++
++1. **Distribute for Review**: Send to all stakeholders for review
++2. **Schedule Review Meetings**: Technical, security, and management reviews
++3. **Incorporate Feedback**: Update document based on review comments
++4. **Obtain Approvals**: Secure all required sign-offs
++5. **Kick-off Implementation**: Begin Phase 1 execution upon final approval
++
++---
++
++**Document Control**:
++- **Created**: September 25, 2025
++- **Last Modified**: September 25, 2025
++- **Next Review**: Upon completion of each phase
++- **Distribution**: FleetForge core team, engineering leadership, security team
+\ No newline at end of file
+diff --git a/docs/product/production-readiness-review-process.md b/docs/product/production-readiness-review-process.md
+new file mode 100644
+index 0000000..9b71c77
+--- /dev/null
++++ b/docs/product/production-readiness-review-process.md
+@@ -0,0 +1,398 @@
++# Production Readiness Review Process
++
++## Document Information
++
++- **Project**: FleetForge Production Readiness - Review and Approval Process
++- **Version**: 1.0
++- **Date**: September 25, 2025
++- **Status**: Ready for Implementation
++- **Purpose**: Define formal peer review and approval workflow for production readiness initiative
++
++## Review Framework
++
++This document establishes the formal review process for the FleetForge Production Readiness initiative, ensuring thorough evaluation and team consensus before implementation begins.
++
++## Review Stages
++
++### Stage 1: Technical Review
++
++**Objective**: Validate technical feasibility, architecture decisions, and implementation approach
++
++**Reviewers**:
++
++- Lead Architect (Primary)
++- Senior Backend Engineer
++- DevOps Engineer
++- Security Engineer (for security-related sections)
++
++**Review Criteria**:
++
++- [ ] Technical approach is sound and follows best practices
++- [ ] Architecture decisions align with system design principles
++- [ ] Implementation tasks are clearly defined and achievable
++- [ ] Dependencies and timelines are realistic
++- [ ] Risk mitigation strategies are adequate
++- [ ] Resource requirements are justified
++
++**Review Process**:
++
++1. **Document Distribution**: Share all three documents with technical reviewers
++2. **Individual Review**: 3 business days for individual review and comment
++3. **Technical Review Meeting**: 2-hour session to discuss findings and concerns
++4. **Revision Period**: 2 business days to incorporate feedback
++5. **Technical Sign-off**: Final approval from Lead Architect
++
++### Stage 2: Security Review
++
++**Objective**: Validate security requirements, threat mitigation, and compliance alignment
++
++**Reviewers**:
++
++- Security Engineer (Primary)
++- Lead Architect
++- Compliance Officer (if applicable)
++- External Security Consultant (optional)
++
++**Review Criteria**:
++
++- [ ] Security requirements follow industry best practices
++- [ ] Threat modeling covers all attack vectors
++- [ ] Compliance requirements adequately addressed
++- [ ] Security controls are implementable and effective
++- [ ] Security testing approach is comprehensive
++- [ ] Incident response procedures include security considerations
++
++**Review Process**:
++
++1. **Security Analysis**: Deep dive into security aspects of the plan
++2. **Threat Assessment**: Validate threat model and mitigation strategies
++3. **Compliance Check**: Ensure all regulatory requirements are met
++4. **Security Review Meeting**: Dedicated session for security concerns
++5. **Security Sign-off**: Approval from Security Engineer and leadership
++
++### Stage 3: Operations Review
++
++**Objective**: Validate operational feasibility, monitoring approach, and incident procedures
++
++**Reviewers**:
++
++- DevOps Engineer (Primary)
++- Technical Writer
++- Operations Manager (if applicable)
++- On-call Team Representatives
++
++**Review Criteria**:
++
++- [ ] Monitoring and alerting strategy is comprehensive
++- [ ] Incident response procedures are actionable
++- [ ] Documentation is complete and accessible
++- [ ] Training requirements are realistic
++- [ ] Operational complexity is manageable
++- [ ] Backup and recovery procedures are tested
++
++**Review Process**:
++
++1. **Operational Assessment**: Review monitoring, alerting, and procedures
++2. **Runbook Validation**: Verify operational procedures are executable
++3. **Training Evaluation**: Assess team readiness and training needs
++4. **Operations Review Meeting**: Focus on operational concerns
++5. **Operations Sign-off**: Approval from DevOps Engineer and operations team
++
++### Stage 4: Management Review
++
++**Objective**: Validate business alignment, resource allocation, and timeline feasibility
++
++**Reviewers**:
++
++- Engineering Director (Primary)
++- Product Owner
++- Project Manager (if applicable)
++- Budget/Finance Representative (if applicable)
++
++**Review Criteria**:
++
++- [ ] Initiative aligns with business objectives and priorities
++- [ ] Resource allocation is appropriate and available
++- [ ] Timeline is realistic and acceptable
++- [ ] Budget requirements are approved
++- [ ] Risk/reward ratio is acceptable
++- [ ] Success metrics are measurable and meaningful
++
++**Review Process**:
++
++1. **Business Case Review**: Validate business justification and ROI
++2. **Resource Allocation**: Confirm team availability and budget
++3. **Timeline Assessment**: Validate schedule against other priorities
++4. **Management Review Meeting**: Executive decision-making session
++5. **Executive Sign-off**: Final approval from Engineering Director
++
++## Review Documentation
++
++### Review Checklist Template
++
++**Document**: [Production Readiness Plan | Technical Design | Implementation Tasks]  
++**Reviewer**: [Name and Role]  
++**Review Date**: [Date]  
++**Review Stage**: [Technical | Security | Operations | Management]
++
++#### General Assessment
++
++- [ ] **Completeness**: All required sections are present and detailed
++- [ ] **Clarity**: Requirements and procedures are clearly articulated
++- [ ] **Feasibility**: Proposed approach is realistic and achievable
++- [ ] **Alignment**: Aligns with project objectives and constraints
++
++#### Specific Review Areas
++
++**Technical Aspects** (Technical Review):
++
++- [ ] Architecture decisions are sound
++- [ ] Implementation approach is appropriate
++- [ ] Dependencies are clearly identified
++- [ ] Testing strategy is comprehensive
++
++**Security Aspects** (Security Review):
++
++- [ ] Security requirements are comprehensive
++- [ ] Threat mitigation strategies are effective
++- [ ] Compliance requirements are addressed
++- [ ] Security testing is adequate
++
++**Operational Aspects** (Operations Review):
++
++- [ ] Monitoring and alerting are comprehensive
++- [ ] Procedures are actionable and tested
++- [ ] Documentation is complete and accessible
++- [ ] Team training is adequate
++
++**Business Aspects** (Management Review):
++
++- [ ] Business justification is clear
++- [ ] Resource requirements are reasonable
++- [ ] Timeline is acceptable
++- [ ] Risk mitigation is adequate
++
++#### Comments and Concerns
++
++**Major Issues** (Must be addressed before approval):
++
++1. [Issue description and recommended resolution]
++2. [Issue description and recommended resolution]
++
++**Minor Issues** (Should be addressed but not blocking):
++
++1. [Issue description and suggested improvement]
++2. [Issue description and suggested improvement]
++
++**Suggestions** (Optional improvements):
++
++1. [Suggestion for enhancement]
++2. [Suggestion for enhancement]
++
++#### Recommendation
++
++- [ ] **Approve**: Ready to proceed as documented
++- [ ] **Approve with Minor Changes**: Approve pending resolution of minor issues
++- [ ] **Request Major Revisions**: Significant changes required before approval
++- [ ] **Reject**: Fundamental issues requiring complete rework
++
++**Reviewer Signature**: _________________________ **Date**: _______
++
++### Review Meeting Agenda Template
++
++**Meeting**: FleetForge Production Readiness Review  
++**Date**: [Date]  
++**Time**: [Time and Duration]  
++**Attendees**: [List of required attendees]  
++**Review Stage**: [Technical | Security | Operations | Management]
++
++#### Agenda
++
++1. **Opening and Objectives** (10 minutes)
++   - Review meeting objectives and expected outcomes
++   - Confirm all reviewers have completed individual reviews
++
++2. **Document Overview** (20 minutes)
++   - Brief presentation of key aspects by document authors
++   - Clarification of any ambiguous sections
++
++3. **Major Issues Discussion** (60 minutes)
++   - Review all major issues identified by reviewers
++   - Discuss resolution approaches and timeline
++   - Reach consensus on required changes
++
++4. **Minor Issues and Suggestions** (30 minutes)
++   - Review minor issues and improvement suggestions
++   - Prioritize changes and enhancements
++   - Assign responsibility for implementation
++
++5. **Decision and Next Steps** (10 minutes)
++   - Formal decision on approval status
++   - Define revision timeline if changes required
++   - Schedule follow-up reviews if needed
++
++#### Pre-Meeting Requirements
++
++- All reviewers must complete individual reviews before the meeting
++- Review checklists must be submitted 24 hours before the meeting
++- Document authors should prepare responses to identified issues
++
++#### Post-Meeting Actions
++
++- Meeting notes and decisions documented within 24 hours
++- Required changes assigned and scheduled
++- Follow-up meetings scheduled as needed
++
++## Approval Workflow
++
++### Approval Sequence
++
++```mermaid
++graph TD
++    A[Documents Published] --> B[Technical Review]
++    B --> C{Technical Approval?}
++    C -->|No| D[Revise Documents]
++    D --> B
++    C -->|Yes| E[Security Review]
++    E --> F{Security Approval?}
++    F -->|No| D
++    F -->|Yes| G[Operations Review]
++    G --> H{Operations Approval?}
++    H -->|No| D
++    H -->|Yes| I[Management Review]
++    I --> J{Management Approval?}
++    J -->|No| D
++    J -->|Yes| K[Final Approval]
++    K --> L[Implementation Authorized]
++```
++
++### Approval Criteria
++
++**Technical Approval**:
++
++- All technical reviewers have signed off
++- Major technical issues resolved
++- Implementation approach validated
++
++**Security Approval**:
++
++- Security requirements meet standards
++- Compliance obligations satisfied
++- Risk mitigation strategies approved
++
++**Operations Approval**:
++
++- Operational procedures validated
++- Monitoring and alerting adequate
++- Team readiness confirmed
++
++**Management Approval**:
++
++- Business case justified
++- Resources allocated and available
++- Timeline and budget approved
++
++### Escalation Process
++
++**Technical Disputes**:
++
++- Escalate to Engineering Director
++- External technical consultation if needed
++- Architecture Review Board decision (if exists)
++
++**Security Concerns**:
++
++- Escalate to CISO or Security Leadership
++- External security audit if required
++- Compliance review if needed
++
++**Resource Conflicts**:
++
++- Escalate to Engineering Director
++- Project prioritization review
++- Executive decision on resource allocation
++
++## Change Management
++
++### Document Updates
++
++**Minor Changes** (typos, clarifications):
++
++- Can be made without re-approval
++- Must be documented in change log
++- Notify reviewers of changes
++
++**Major Changes** (scope, timeline, approach):
++
++- Require re-review by affected review stages
++- May require complete re-approval cycle
++- Must be justified and documented
++
++### Scope Changes
++
++**Scope Expansion**:
++
++- Requires management approval
++- May require complete re-review
++- Resource and timeline impact assessment
++
++**Scope Reduction**:
++
++- Requires stakeholder notification
++- May affect other project dependencies
++- Success criteria may need adjustment
++
++## Success Metrics
++
++### Review Process Effectiveness
++
++- **Review Completion Time**: Target 2 weeks from submission to final approval
++- **Issue Identification Rate**: Measure quality of review process
++- **Revision Cycles**: Target maximum 2 revision cycles
++- **Reviewer Participation**: 100% completion of required reviews
++
++### Implementation Success
++
++- **Schedule Adherence**: Track actual vs. planned timeline
++- **Quality Metrics**: Post-implementation defect rates
++- **Team Satisfaction**: Team feedback on process effectiveness
++- **Business Value**: Achievement of stated objectives
++
++## Implementation Authorization
++
++### Final Approval Requirements
++
++Upon successful completion of all review stages:
++
++- [ ] All review stages completed successfully
++- [ ] All major issues resolved and documented
++- [ ] Required revisions incorporated
++- [ ] Final approval signatures obtained
++- [ ] Implementation team briefed and ready
++- [ ] Project tracking systems updated
++
++### Go/No-Go Decision
++
++**Criteria for Implementation Authorization**:
++
++- All four review stages completed with approval
++- No unresolved major issues remain
++- Team resources confirmed and available
++- Implementation plan validated and ready
++- Success criteria defined and measurable
++
++### Implementation Kickoff
++
++**Upon Authorization**:
++
++1. **Team Notification**: Inform all stakeholders of approval
++2. **Resource Allocation**: Confirm and allocate required resources
++3. **Project Tracking**: Set up progress monitoring and reporting
++4. **Risk Monitoring**: Establish ongoing risk assessment
++5. **Communication Plan**: Regular progress updates to stakeholders
++
++---
++
++**Process Owner**: Engineering Director  
++**Process Review**: Quarterly review of process effectiveness  
++**Next Review**: After completion of first production readiness initiative
+\ No newline at end of file
+diff --git a/docs/product/production-readiness-tasks.md b/docs/product/production-readiness-tasks.md
+new file mode 100644
+index 0000000..e82e7ab
+--- /dev/null
++++ b/docs/product/production-readiness-tasks.md
+@@ -0,0 +1,790 @@
++# Production Readiness Implementation Tasks
++
++## Document Information
++
++- **Project**: FleetForge Production Readiness - Implementation Tasks
++- **Version**: 1.0
++- **Date**: September 25, 2025
++- **Status**: Draft - Pending Approval
++- **Related**: production-readiness-plan.md, production-readiness-design.md
++
++## Task Breakdown Structure
++
++This document provides detailed, trackable tasks for implementing production readiness across all phases. Each task includes acceptance criteria, dependencies, and validation steps following the Spec Driven Workflow v1.
++
++## Phase 1: Security Hardening (Weeks 1-2)
++
++### Task SEC-001: Container Vulnerability Scanning
++
++**ID**: SEC-001  
++**Priority**: Critical  
++**Estimated Effort**: 2 days  
++**Assignee**: DevOps Engineer  
++**Dependencies**: None  
++
++**Description**: Implement container image vulnerability scanning in CI/CD pipeline to detect and block deployment of images with critical vulnerabilities.
++
++**Acceptance Criteria**:
++
++- [ ] Trivy scanner integrated into GitHub Actions workflow
++- [ ] Vulnerability scanning runs on every container build
++- [ ] Critical CVE detection blocks image deployment
++- [ ] Vulnerability reports stored as build artifacts
++- [ ] Slack notifications for critical vulnerabilities
++
++**Implementation Steps**:
++
++1. Add Trivy action to `.github/workflows/docker-build.yml`
++2. Configure vulnerability thresholds (block on HIGH/CRITICAL)
++3. Add vulnerability report artifact upload
++4. Test with known vulnerable image
++5. Configure notification webhooks
++
++**Validation**: 
++
++```bash
++# Test with vulnerable image
++docker build -t test-vuln --build-arg BASE_IMAGE=nginx:1.10 .
++# Should fail CI with vulnerability report
++```
++
++**Deliverables**:
++
++- Updated CI/CD workflow with vulnerability scanning
++- Vulnerability threshold configuration
++- Test results and documentation
++
++### Task SEC-002: Distroless Base Images
++
++**ID**: SEC-002  
++**Priority**: High  
++**Estimated Effort**: 1 day  
++**Assignee**: Backend Engineer  
++**Dependencies**: SEC-001  
++
++**Description**: Migrate container images to use distroless base images to reduce attack surface and eliminate package manager vulnerabilities.
++
++**Acceptance Criteria**:
++
++- [ ] Controller image uses distroless Go base
++- [ ] Cell simulator image uses distroless Go base  
++- [ ] Images pass vulnerability scanning with reduced CVE count
++- [ ] Container startup time within 10% of previous performance
++- [ ] All functionality tested in distroless environment
++
++**Implementation Steps**:
++
++1. Update `Dockerfile` to use `gcr.io/distroless/static`
++2. Ensure binary is statically linked
++3. Test container functionality
++4. Update multi-stage build process
++5. Performance validation
++
++**Validation**:
++
++```bash
++# Verify distroless image
++docker run --rm fleetforge-controller:distroless --version
++# Should run without shell access
++docker run --rm -it fleetforge-controller:distroless sh
++# Should fail - no shell available
++```
++
++### Task SEC-003: Pod Security Standards
++
++**ID**: SEC-003  
++**Priority**: High  
++**Estimated Effort**: 2 days  
++**Assignee**: DevOps Engineer  
++**Dependencies**: SEC-002  
++
++**Description**: Implement restricted Pod Security Standards to enforce security policies at the cluster level.
++
++**Acceptance Criteria**:
++
++- [ ] FleetForge namespace enforces restricted pod security
++- [ ] All pods run as non-root user
++- [ ] Security contexts configured with minimal privileges
++- [ ] Read-only root filesystem where possible
++- [ ] Capability dropping implemented
++
++**Implementation Steps**:
++
++1. Add pod security labels to namespace manifests
++2. Configure security contexts in deployment manifests
++3. Test pod deployment under restricted policies
++4. Update RBAC for pod security requirements
++5. Document security configuration
++
++**Validation**:
++
++```bash
++# Verify pod security enforcement
++kubectl describe ns fleetforge-system | grep pod-security
++# Check running pods comply
++kubectl get pods -n fleetforge-system -o jsonpath='{.items[*].spec.securityContext}'
++```
++
++### Task SEC-004: Network Policies
++
++**ID**: SEC-004  
++**Priority**: Medium  
++**Estimated Effort**: 2 days  
++**Assignee**: DevOps Engineer  
++**Dependencies**: SEC-003  
++
++**Description**: Implement network policies to restrict pod-to-pod communication and external network access based on security requirements.
++
++**Acceptance Criteria**:
++
++- [ ] Default deny network policy applied to FleetForge namespace
++- [ ] Controller can access Kubernetes API only
++- [ ] Cell pods can communicate with controller only  
++- [ ] Monitoring access allowed for metrics collection
++- [ ] Network policy violations logged and alerted
++
++**Implementation Steps**:
++
++1. Create default deny network policy
++2. Define allowed ingress/egress rules
++3. Test pod communication patterns
++4. Validate monitoring access
++5. Add network policy monitoring
++
++**Validation**:
++
++```bash
++# Test network isolation
++kubectl exec cell-pod -- curl controller-service:8080/metrics
++# Should succeed
++kubectl exec cell-pod -- curl external-service.com
++# Should fail (unless explicitly allowed)
++```
++
++### Task SEC-005: RBAC Hardening
++
++**ID**: SEC-005  
++**Priority**: High  
++**Estimated Effort**: 1 day  
++**Assignee**: Security Engineer  
++**Dependencies**: SEC-004  
++
++**Description**: Review and harden RBAC permissions following least-privilege principle.
++
++**Acceptance Criteria**:
++
++- [ ] Controller service account has minimal required permissions
++- [ ] No cluster-admin or overly broad permissions
++- [ ] Resource access limited to necessary namespaces
++- [ ] RBAC permissions documented and justified
++- [ ] Unused permissions removed
++
++**Implementation Steps**:
++
++1. Audit current RBAC permissions
++2. Identify minimal required permissions
++3. Update ClusterRole and RoleBinding manifests
++4. Test controller functionality with restricted permissions
++5. Document permission justifications
++
++**Validation**:
++
++```bash
++# Verify controller permissions
++kubectl auth can-i create worldspecs --as=system:serviceaccount:fleetforge-system:fleetforge-controller
++# Should be true
++kubectl auth can-i create secrets --as=system:serviceaccount:fleetforge-system:fleetforge-controller
++# Should be false (unless required)
++```
++
++## Phase 2: Observability Infrastructure (Weeks 3-4)
++
++### Task OBS-001: Prometheus Stack Deployment
++
++**ID**: OBS-001  
++**Priority**: Critical  
++**Estimated Effort**: 2 days  
++**Assignee**: DevOps Engineer  
++**Dependencies**: SEC-005  
++
++**Description**: Deploy production-grade Prometheus monitoring stack with high availability configuration.
++
++**Acceptance Criteria**:
++
++- [ ] Prometheus deployed with 2+ replicas and persistent storage
++- [ ] AlertManager configured with HA and external routing
++- [ ] Node Exporter deployed on all cluster nodes
++- [ ] Service monitors configured for FleetForge components
++- [ ] Prometheus federation for multi-cluster (if applicable)
++
++**Implementation Steps**:
++
++1. Deploy Prometheus Operator or kube-prometheus-stack
++2. Configure persistent storage for metrics data
++3. Set up AlertManager with external integrations
++4. Deploy monitoring ServiceMonitors
++5. Validate metric collection
++
++**Validation**:
++
++```bash
++# Check Prometheus targets
++curl -s http://prometheus:9090/api/v1/targets | jq '.data.activeTargets | length'
++# Verify FleetForge metrics
++curl -s http://prometheus:9090/api/v1/query?query=fleetforge_worldspecs_total
++```
++
++### Task OBS-002: Custom Metrics Implementation
++
++**ID**: OBS-002  
++**Priority**: High  
++**Estimated Effort**: 2 days  
++**Assignee**: Backend Engineer  
++**Dependencies**: OBS-001  
++
++**Description**: Implement custom Prometheus metrics in FleetForge controller and cell components.
++
++**Acceptance Criteria**:
++
++- [ ] WorldSpec reconciliation metrics exposed
++- [ ] Cell lifecycle metrics tracked
++- [ ] Controller performance metrics available
++- [ ] Business logic metrics instrumented
++- [ ] Metrics documentation complete
++
++**Implementation Steps**:
++
++1. Add Prometheus client libraries to Go modules
++2. Implement custom metric collectors
++3. Expose metrics endpoints on controllers
++4. Add metric labels for dimensional analysis
++5. Create metrics documentation
++
++**Validation**:
++
++```bash
++# Check custom metrics endpoint
++curl http://fleetforge-controller:8080/metrics | grep fleetforge_
++# Verify metrics in Prometheus
++promql 'fleetforge_worldspecs_total'
++```
++
++### Task OBS-003: Grafana Dashboards
++
++**ID**: OBS-003  
++**Priority**: Medium  
++**Estimated Effort**: 2 days  
++**Assignee**: DevOps Engineer  
++**Dependencies**: OBS-002  
++
++**Description**: Create comprehensive Grafana dashboards for FleetForge monitoring and observability.
++
++**Acceptance Criteria**:
++
++- [ ] FleetForge overview dashboard with key metrics
++- [ ] Controller performance dashboard
++- [ ] Cell lifecycle and health dashboard  
++- [ ] Infrastructure and resource utilization dashboard
++- [ ] Alerting and SLI/SLO dashboard
++
++**Implementation Steps**:
++
++1. Design dashboard layouts and panels
++2. Create PromQL queries for visualizations
++3. Implement dashboard templates and variables
++4. Configure dashboard alerting annotations
++5. Export dashboards as JSON for version control
++
++**Validation**:
++
++```bash
++# Import dashboard via API
++curl -X POST http://grafana:3000/api/dashboards/db \
++  -H "Content-Type: application/json" \
++  -d @fleetforge-dashboard.json
++```
++
++### Task OBS-004: Structured Logging
++
++**ID**: OBS-004  
++**Priority**: Medium  
++**Estimated Effort**: 2 days  
++**Assignee**: Backend Engineer  
++**Dependencies**: OBS-001  
++
++**Description**: Implement structured JSON logging with correlation IDs for improved troubleshooting.
++
++**Acceptance Criteria**:
++
++- [ ] All components use structured JSON logging
++- [ ] Log levels configurable via environment variables
++- [ ] Correlation IDs propagated through operations
++- [ ] Sensitive data excluded from logs
++- [ ] Log format consistent across components
++
++**Implementation Steps**:
++
++1. Replace standard logging with structured logger (logrus/zap)
++2. Add correlation ID middleware
++3. Configure log levels and output formats
++4. Implement log sampling for high-volume operations
++5. Add security filtering for sensitive data
++
++**Validation**:
++
++```bash
++# Check structured log format
++kubectl logs deployment/fleetforge-controller | jq '.'
++# Verify correlation ID propagation
++kubectl logs deployment/fleetforge-controller | jq 'select(.correlation_id != null)'
++```
++
++### Task OBS-005: Distributed Tracing
++
++**ID**: OBS-005  
++**Priority**: Low  
++**Estimated Effort**: 3 days  
++**Assignee**: Backend Engineer  
++**Dependencies**: OBS-004  
++
++**Description**: Implement distributed tracing with Jaeger for request flow visualization.
++
++**Acceptance Criteria**:
++
++- [ ] Jaeger deployed and configured
++- [ ] OpenTelemetry instrumentation added to components
++- [ ] Traces collected for reconciliation operations
++- [ ] Trace correlation with logs established
++- [ ] Trace sampling configured for performance
++
++**Implementation Steps**:
++
++1. Deploy Jaeger with appropriate storage backend
++2. Add OpenTelemetry Go libraries
++3. Instrument controller reconciliation loops
++4. Configure trace propagation between components
++5. Set up trace sampling and retention
++
++**Validation**:
++
++```bash
++# Check Jaeger UI for traces
++curl http://jaeger:16686/api/traces?service=fleetforge-controller
++# Verify trace-log correlation
++kubectl logs deployment/fleetforge-controller | jq 'select(.trace_id != null)'
++```
++
++## Phase 3: Reliability Engineering (Weeks 5-6)
++
++### Task REL-001: High Availability Configuration
++
++**ID**: REL-001  
++**Priority**: Critical  
++**Estimated Effort**: 2 days  
++**Assignee**: DevOps Engineer  
++**Dependencies**: OBS-005  
++
++**Description**: Configure FleetForge controller for high availability with leader election.
++
++**Acceptance Criteria**:
++
++- [ ] Controller deployed with 3+ replicas
++- [ ] Leader election configured and tested
++- [ ] Pod anti-affinity rules prevent single points of failure
++- [ ] Graceful shutdown and startup procedures
++- [ ] Failover time under 30 seconds
++
++**Implementation Steps**:
++
++1. Update deployment to use multiple replicas
++2. Configure leader election in controller manager
++3. Add pod anti-affinity rules
++4. Implement graceful shutdown handlers
++5. Test failover scenarios
++
++**Validation**:
++
++```bash
++# Check leader election
++kubectl get lease -n fleetforge-system
++# Test failover
++kubectl delete pod -l app=fleetforge-controller --force
++# Verify new leader elected within 30s
++```
++
++### Task REL-002: Backup Procedures
++
++**ID**: REL-002  
++**Priority**: High  
++**Estimated Effort**: 2 days  
++**Assignee**: DevOps Engineer  
++**Dependencies**: REL-001  
++
++**Description**: Implement automated backup procedures for FleetForge resources and etcd data.
++
++**Acceptance Criteria**:
++
++- [ ] Velero deployed for Kubernetes resource backup
++- [ ] Automated daily backups of WorldSpec resources
++- [ ] etcd backup integration (if managing etcd)
++- [ ] Backup retention policy configured
++- [ ] Restore procedures documented and tested
++
++**Implementation Steps**:
++
++1. Deploy Velero with cloud storage backend
++2. Configure backup schedules for FleetForge namespaces
++3. Set up backup monitoring and alerting
++4. Create backup retention policies
++5. Test restore procedures
++
++**Validation**:
++
++```bash
++# Trigger backup
++velero backup create fleetforge-test --include-namespaces fleetforge-system
++# Verify backup completion
++velero backup describe fleetforge-test
++# Test restore
++velero restore create --from-backup fleetforge-test
++```
++
++### Task REL-003: Chaos Engineering
++
++**ID**: REL-003  
++**Priority**: Medium  
++**Estimated Effort**: 2 days  
++**Assignee**: DevOps Engineer  
++**Dependencies**: REL-002  
++
++**Description**: Implement chaos engineering tests to validate system resilience.
++
++**Acceptance Criteria**:
++
++- [ ] Chaos Mesh or Litmus deployed for chaos testing
++- [ ] Pod failure experiments configured
++- [ ] Network partition experiments defined
++- [ ] Resource exhaustion tests implemented
++- [ ] Chaos test results documented
++
++**Implementation Steps**:
++
++1. Deploy chaos engineering platform
++2. Create chaos experiment templates
++3. Configure automated chaos testing schedule  
++4. Implement result collection and analysis
++5. Document findings and improvements
++
++**Validation**:
++
++```bash
++# Run pod chaos experiment
++kubectl apply -f chaos-experiments/pod-failure.yaml
++# Monitor system behavior during chaos
++kubectl get worldspecs -w
++```
++
++### Task REL-004: Performance Testing
++
++**ID**: REL-004  
++**Priority**: Medium  
++**Estimated Effort**: 3 days  
++**Assignee**: Backend Engineer  
++**Dependencies**: REL-001  
++
++**Description**: Implement comprehensive performance testing and benchmarking.
++
++**Acceptance Criteria**:
++
++- [ ] Load testing scripts for WorldSpec creation
++- [ ] Performance benchmarks for controller reconciliation
++- [ ] Memory and CPU usage profiling
++- [ ] Scalability testing up to defined limits
++- [ ] Performance regression testing in CI
++
++**Implementation Steps**:
++
++1. Create k6 load testing scripts
++2. Implement Go benchmark tests
++3. Set up performance monitoring during tests
++4. Define performance baselines and SLIs
++5. Integrate performance testing into CI/CD
++
++**Validation**:
++
++```bash
++# Run load test
++k6 run scripts/worldspec-load-test.js
++# Check performance metrics
++go test -bench=. -benchmem ./pkg/controllers/
++```
++
++## Phase 4: Operational Excellence (Weeks 7-8)
++
++### Task OPS-001: Incident Response Procedures
++
++**ID**: OPS-001  
++**Priority**: High  
++**Estimated Effort**: 2 days  
++**Assignee**: Technical Writer + DevOps Engineer  
++**Dependencies**: REL-004  
++
++**Description**: Create comprehensive incident response procedures and runbooks.
++
++**Acceptance Criteria**:
++
++- [ ] Incident classification and escalation procedures
++- [ ] On-call rotation and contact information
++- [ ] Runbooks for common failure scenarios
++- [ ] Post-incident review process defined
++- [ ] Incident response tools and integrations
++
++**Implementation Steps**:
++
++1. Define incident severity levels and escalation paths
++2. Create runbooks for top failure scenarios
++3. Set up on-call scheduling and notifications
++4. Implement incident tracking and communication tools
++5. Train team on incident response procedures
++
++**Validation**:
++
++- Conduct tabletop exercise simulating major incident
++- Test escalation and communication procedures
++- Validate runbook effectiveness
++
++### Task OPS-002: Deployment Automation
++
++**ID**: OPS-002  
++**Priority**: Medium  
++**Estimated Effort**: 2 days  
++**Assignee**: DevOps Engineer  
++**Dependencies**: OPS-001  
++
++**Description**: Enhance deployment automation for production releases.
++
++**Acceptance Criteria**:
++
++- [ ] GitOps-style deployment pipeline
++- [ ] Automated rollback on health check failures
++- [ ] Blue-green or canary deployment strategy
++- [ ] Pre-deployment validation gates
++- [ ] Post-deployment verification tests
++
++**Implementation Steps**:
++
++1. Implement GitOps deployment workflow
++2. Configure automated health checks and rollbacks
++3. Set up deployment strategy (blue-green/canary)
++4. Create pre-deployment validation tests
++5. Implement post-deployment verification
++
++**Validation**:
++
++```bash
++# Test deployment
++git tag v1.0.1
++git push origin v1.0.1
++# Verify automated deployment
++kubectl rollout status deployment/fleetforge-controller
++```
++
++### Task OPS-003: Documentation Update
++
++**ID**: OPS-003  
++**Priority**: Medium  
++**Estimated Effort**: 2 days  
++**Assignee**: Technical Writer  
++**Dependencies**: OPS-002  
++
++**Description**: Update all documentation to reflect production-ready configuration and procedures.
++
++**Acceptance Criteria**:
++
++- [ ] Installation guide updated for production deployment
++- [ ] Operations guide with monitoring and troubleshooting
++- [ ] Security configuration documentation
++- [ ] Backup and recovery procedures documented
++- [ ] Team training materials created
++
++**Implementation Steps**:
++
++1. Update MkDocs site with production procedures
++2. Create operations and troubleshooting guides
++3. Document security configurations and policies
++4. Write backup and recovery procedures
++5. Create team training materials
++
++**Validation**:
++
++- Technical review of all documentation
++- Team walkthrough of procedures
++- Documentation tested by following steps
++
++### Task OPS-004: Team Training
++
++**ID**: OPS-004  
++**Priority**: High  
++**Estimated Effort**: 1 day  
++**Assignee**: All team members  
++**Dependencies**: OPS-003  
++
++**Description**: Conduct comprehensive team training on production procedures.
++
++**Acceptance Criteria**:
++
++- [ ] All team members trained on incident response
++- [ ] Operations procedures validated through practice
++- [ ] Monitoring and alerting familiarity established
++- [ ] Backup and recovery procedures tested
++- [ ] Team certification on production readiness
++
++**Implementation Steps**:
++
++1. Schedule team training sessions
++2. Conduct hands-on practice with production procedures
++3. Run incident response simulations
++4. Validate backup and recovery procedures
++5. Certify team readiness
++
++**Validation**:
++
++- Successful completion of incident response drill
++- Team demonstrates proficiency with all procedures
++- All team members pass production readiness assessment
++
++## Cross-Cutting Tasks
++
++### Task XC-001: Security Audit
++
++**Priority**: Critical  
++**Estimated Effort**: 1 week  
++**Assignee**: Security Engineer  
++**Dependencies**: SEC-005, OBS-005  
++
++**Description**: Conduct comprehensive security audit of production-ready FleetForge.
++
++**Acceptance Criteria**:
++
++- [ ] Vulnerability assessment completed
++- [ ] Penetration testing performed
++- [ ] Security configuration review
++- [ ] Compliance validation
++- [ ] Security audit report with recommendations
++
++### Task XC-002: Performance Validation
++
++**Priority**: High  
++**Estimated Effort**: 3 days  
++**Assignee**: Backend Engineer  
++**Dependencies**: REL-004, OBS-003  
++
++**Description**: Validate system meets all performance requirements under production load.
++
++**Acceptance Criteria**:
++
++- [ ] All SLI targets met under load testing
++- [ ] Resource utilization within acceptable limits  
++- [ ] Scalability limits validated
++- [ ] Performance regression testing passing
++- [ ] Performance report with recommendations
++
++## Risk Mitigation Tasks
++
++### Task RISK-001: Rollback Procedures
++
++**Priority**: Critical  
++**Estimated Effort**: 1 day  
++**Assignee**: DevOps Engineer  
++
++**Description**: Implement and test rollback procedures for each production change.
++
++**Acceptance Criteria**:
++
++- [ ] Automated rollback triggers configured
++- [ ] Manual rollback procedures documented
++- [ ] Rollback testing validated
++- [ ] Data migration rollback procedures (if applicable)
++
++### Task RISK-002: Monitoring Validation
++
++**Priority**: High  
++**Estimated Effort**: 2 days  
++**Assignee**: DevOps Engineer  
++
++**Description**: Validate monitoring and alerting catches all critical failure modes.
++
++**Acceptance Criteria**:
++
++- [ ] All failure scenarios trigger appropriate alerts
++- [ ] Alert routing and escalation tested
++- [ ] False positive rate acceptable (<5%)
++- [ ] Alert response procedures validated
++
++## Implementation Timeline
++
++```mermaid
++gantt
++    title Production Readiness Implementation
++    dateFormat  YYYY-MM-DD
++    section Security
++    SEC-001: sec1, 2025-09-25, 2d
++    SEC-002: sec2, after sec1, 1d
++    SEC-003: sec3, after sec2, 2d
++    SEC-004: sec4, after sec3, 2d
++    SEC-005: sec5, after sec4, 1d
++    
++    section Observability  
++    OBS-001: obs1, after sec5, 2d
++    OBS-002: obs2, after obs1, 2d
++    OBS-003: obs3, after obs2, 2d
++    OBS-004: obs4, after obs1, 2d
++    OBS-005: obs5, after obs4, 3d
++    
++    section Reliability
++    REL-001: rel1, after obs5, 2d
++    REL-002: rel2, after rel1, 2d
++    REL-003: rel3, after rel2, 2d
++    REL-004: rel4, after rel1, 3d
++    
++    section Operations
++    OPS-001: ops1, after rel4, 2d
++    OPS-002: ops2, after ops1, 2d
++    OPS-003: ops3, after ops2, 2d
++    OPS-004: ops4, after ops3, 1d
++    
++    section Cross-Cutting
++    XC-001: xc1, after sec5, 5d
++    XC-002: xc2, after rel4, 3d
++```
++
++## Task Dependencies Matrix
++
++| Task | Depends On | Blocks |
++|------|------------|--------|
++| SEC-001 | None | SEC-002 |
++| SEC-002 | SEC-001 | SEC-003 |
++| SEC-003 | SEC-002 | SEC-004 |
++| SEC-004 | SEC-003 | SEC-005 |
++| SEC-005 | SEC-004 | OBS-001 |
++| OBS-001 | SEC-005 | OBS-002, OBS-004 |
++| OBS-002 | OBS-001 | OBS-003 |
++| OBS-003 | OBS-002 | None |
++| OBS-004 | OBS-001 | OBS-005 |
++| OBS-005 | OBS-004 | REL-001 |
++| REL-001 | OBS-005 | REL-002, REL-004 |
++| REL-002 | REL-001 | REL-003 |
++| REL-003 | REL-002 | None |
++| REL-004 | REL-001 | OPS-001 |
++| OPS-001 | REL-004 | OPS-002 |
++| OPS-002 | OPS-001 | OPS-003 |
++| OPS-003 | OPS-002 | OPS-004 |
++| OPS-004 | OPS-003 | None |
++
++---
++
++**Task Tracking**: All tasks should be tracked in project management system with daily status updates and blocker identification.
++
++**Quality Gates**: Each phase must pass quality review before proceeding to next phase.
++
++**Review Process**: Weekly progress reviews with stakeholders and technical leadership.
+\ No newline at end of file
+diff --git a/docs/research/index.md b/docs/research/index.md
+new file mode 100644
+index 0000000..66e31e8
+--- /dev/null
++++ b/docs/research/index.md
+@@ -0,0 +1,254 @@
++# Research
++
++This section contains academic papers, research findings, and conceptual background that inform FleetForge's design and implementation.
++
++## Overview
++
++FleetForge builds on decades of research in distributed systems, spatial partitioning, and elastic computing. This collection provides the theoretical foundation and related work that guides our architectural decisions.
++
++## Key Research Areas
++
++### Spatial Partitioning & Load Balancing
++
++- **Dynamic spatial partitioning**: Algorithms for adaptive world subdivision
++- **Load balancing strategies**: Distributing computational load across cells
++- **Boundary management**: Handling entities that cross cell boundaries
++- **Hierarchical decomposition**: Multi-level spatial organization
++
++### Elastic Computing
++
++- **Auto-scaling algorithms**: Predictive and reactive scaling approaches  
++- **Resource allocation**: Efficient resource distribution and scheduling
++- **Migration strategies**: Moving computation between nodes with minimal disruption
++- **Capacity planning**: Forecasting resource needs and growth patterns
++
++### Distributed Game Architecture
++
++- **State synchronization**: Keeping distributed state consistent
++- **Area of Interest (AOI)**: Managing which entities need to communicate
++- **Latency optimization**: Minimizing network delays and jitter
++- **Scalability patterns**: Architectural patterns for massive scale
++
++## Research Papers
++
++### Core Papers
++
++#### [Cell Mesh Elastic Fabric](cell-mesh-elastic-fabric-paper.md)
++
++Foundational paper describing the cell mesh architecture and elastic scaling concepts that directly inform FleetForge's design.
++
++**Key Contributions:**
++- Cell-based spatial partitioning model
++- Dynamic cell splitting and merging algorithms
++- Elastic resource allocation strategies
++- Performance evaluation and benchmarks
++
++**Relevance to FleetForge:**
++- Direct inspiration for WorldSpec and cell lifecycle management
++- Algorithms adapted for Kubernetes operator pattern
++- Performance targets and evaluation methodology
++
++#### [World Partitioning Academic Paper](world-partitioning-academic-paper.md)
++
++Academic treatment of spatial partitioning algorithms and their application to distributed virtual worlds.
++
++**Key Contributions:**
++- Comparative analysis of partitioning strategies
++- Mathematical models for load distribution
++- Boundary management protocols
++- Scalability analysis and limits
++
++**Relevance to FleetForge:**
++- Theoretical foundation for cell boundary calculations
++- Load balancing heuristics and algorithms
++- Validation of architectural assumptions
++
++### Related Work
++
++#### Distributed Systems
++
++- **Consistent Hashing**: Dynamo-style partitioning for distributed data
++- **Raft Consensus**: Distributed consensus for cell coordination
++- **CRDT (Conflict-free Replicated Data Types)**: Managing distributed state
++- **Vector Clocks**: Tracking causality in distributed events
++
++#### Container Orchestration
++
++- **Kubernetes Operators**: Extending Kubernetes with custom controllers
++- **Horizontal Pod Autoscaler**: Auto-scaling based on metrics
++- **Cluster Autoscaler**: Node-level scaling strategies
++- **Service Mesh**: Network management for microservices
++
++#### Game Architecture
++
++- **Interest Management**: Filtering relevant updates for clients
++- **Dead Reckoning**: Predictive state synchronization
++- **Zone Transfer**: Moving players between game regions
++- **Instancing**: Creating isolated game world copies
++
++## Theoretical Foundations
++
++### Spatial Algorithms
++
++#### Quadtree Partitioning
++
++FleetForge uses quadtree-inspired recursive spatial subdivision:
++
++```
++Root World
++├── NW Cell ────┐
++├── NE Cell     │ Level 1
++├── SW Cell     │
++└── SE Cell ────┘
++    ├── NW Subcell ──┐
++    ├── NE Subcell   │ Level 2
++    ├── SW Subcell   │
++    └── SE Subcell ──┘
++```
++
++**Properties:**
++- Hierarchical organization
++- Balanced load distribution  
++- Efficient neighbor finding
++- Scalable to large worlds
++
++#### Load Balancing Metrics
++
++Cell splitting decisions based on:
++
++- **Population density**: Number of entities per unit area
++- **Computational load**: CPU usage and processing time
++- **Network traffic**: Inter-cell communication volume
++- **Resource utilization**: Memory, bandwidth, and storage
++
++### Performance Models
++
++#### Scaling Laws
++
++Expected performance characteristics:
++
++- **Linear cell scaling**: O(n) cells support O(n) total entities
++- **Logarithmic lookup**: O(log n) time to find entity locations
++- **Constant migration**: O(1) time for entity movement within cells
++- **Bounded communication**: Limited by AOI radius, not world size
++
++#### Capacity Planning
++
++Resource estimation formulas:
++
++```
++Total CPU = Base + (CellCount × CellOverhead) + (EntityCount × EntityCost)
++Total Memory = Metadata + (CellCount × CellMemory) + (EntityCount × EntityMemory)
++Network BW = ControlPlane + (CellCount × InterCellBW) + (EntityCount × ClientBW)
++```
++
++## Implementation Research
++
++### Kubernetes Patterns
++
++#### Custom Resource Definitions (CRDs)
++
++Research on extending Kubernetes APIs:
++
++- **Schema evolution**: Backward-compatible API changes
++- **Validation**: OpenAPI schema and admission webhooks
++- **Storage**: etcd scaling and performance considerations
++- **Versioning**: API version migration strategies
++
++#### Controller Patterns
++
++Best practices for Kubernetes controllers:
++
++- **Reconciliation loops**: Declarative state management
++- **Leader election**: High availability controller design
++- **Event-driven architecture**: Responding to resource changes
++- **Error handling**: Retry logic and exponential backoff
++
++### Observability Research
++
++#### Metrics and Monitoring
++
++Research on observability for distributed systems:
++
++- **RED metrics**: Rate, Errors, Duration for service monitoring
++- **USE metrics**: Utilization, Saturation, Errors for resource monitoring  
++- **Distributed tracing**: Following requests across service boundaries
++- **Log aggregation**: Centralized logging for distributed troubleshooting
++
++#### Performance Analysis
++
++Techniques for analyzing system performance:
++
++- **Profiling**: CPU and memory profiling for hot paths
++- **Load testing**: Synthetic workload generation and analysis
++- **Chaos engineering**: Failure injection and resilience testing
++- **Capacity modeling**: Predicting future resource needs
++
++## Future Research Directions
++
++### Next-Generation Algorithms
++
++Areas for continued research and development:
++
++- **Machine learning**: Predictive autoscaling based on usage patterns
++- **Graph algorithms**: Optimizing inter-cell connectivity
++- **Game theory**: Multi-tenant resource allocation strategies
++- **Consensus protocols**: Faster coordination for cell boundaries
++
++### Emerging Technologies
++
++Technologies that may influence future FleetForge development:
++
++- **WebAssembly**: Sandboxed execution for user-defined cell logic
++- **eBPF**: Kernel-level networking optimizations
++- **RDMA**: High-performance networking for cell communication
++- **Persistent memory**: New storage technologies for state management
++
++## Contributing Research
++
++### Adding Papers
++
++To add research papers to this collection:
++
++1. **Create paper file**: Add markdown file with paper summary
++2. **Extract key insights**: Highlight relevance to FleetForge
++3. **Link to implementation**: Connect research to code where applicable
++4. **Update index**: Add entry to this index page
++
++### Paper Template
++
++```markdown
++# Paper Title
++
++## Metadata
++- **Authors**: Author names
++- **Published**: Venue and year
++- **DOI**: Digital Object Identifier
++- **PDF**: Link to paper (if available)
++
++## Abstract
++Brief summary of the paper's contributions.
++
++## Key Contributions
++- Bullet point list of main contributions
++- Focus on items relevant to FleetForge
++
++## Relevance to FleetForge
++How this research informs FleetForge design:
++- Specific algorithms or techniques adopted
++- Performance insights or benchmarks
++- Architectural patterns or principles
++
++## Implementation Notes
++- Which FleetForge components use these ideas
++- How the research was adapted for Kubernetes
++- Performance considerations and trade-offs
++
++## Further Reading
++- Related papers and references
++- Follow-up work and extensions
++```
++
++---
++
++*This research foundation helps ensure FleetForge builds on solid theoretical ground while advancing the state of the art in elastic distributed systems.*
+\ No newline at end of file
+diff --git a/docs/stylesheets/extra.css b/docs/stylesheets/extra.css
+new file mode 100644
+index 0000000..490187f
+--- /dev/null
++++ b/docs/stylesheets/extra.css
+@@ -0,0 +1,67 @@
++.hero {
++  padding: 3rem;
++  border-radius: 1rem;
++  background: linear-gradient(135deg, var(--md-primary-fg-color), var(--md-accent-fg-color));
++  color: var(--md-primary-bg-color);
++  box-shadow: 0 1rem 2rem rgba(15, 23, 42, 0.2);
++  margin-bottom: 2.5rem;
++}
++
++.hero a {
++  color: inherit;
++}
++
++.hero .md-button {
++  margin-right: 1rem;
++  margin-top: 1rem;
++}
++
++.hero .md-button--primary {
++  background-color: var(--md-primary-bg-color);
++  color: var(--md-primary-fg-color);
++}
++
++.grid.cards {
++  display: grid;
++  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
++  gap: 1.5rem;
++  margin-bottom: 2.5rem;
++}
++
++.grid.cards > ul {
++  list-style: none;
++  margin: 0;
++  padding: 0;
++}
++
++.grid.cards li {
++  background: var(--md-default-bg-color);
++  border-radius: 1rem;
++  box-shadow: 0 1rem 2rem rgba(15, 23, 42, 0.12);
++  padding: 1.5rem;
++  display: flex;
++  flex-direction: column;
++  gap: 0.75rem;
++}
++
++.grid.cards li strong {
++  font-size: 1.1rem;
++}
++
++.grid.cards a {
++  font-weight: 600;
++  display: inline-flex;
++  align-items: center;
++  gap: 0.35rem;
++}
++
++.grid.cards a:focus,
++.grid.cards a:hover {
++  text-decoration: underline;
++}
++
++@media (max-width: 640px) {
++  .hero {
++    padding: 2rem;
++  }
++}
+diff --git a/mkdocs.yml b/mkdocs.yml
+new file mode 100644
+index 0000000..1feabb1
+--- /dev/null
++++ b/mkdocs.yml
+@@ -0,0 +1,128 @@
++site_name: FleetForge Documentation
++site_url: https://astrosteveo.github.io/fleetforge
++site_description: Elastic Kubernetes Cell Management Platform
++repo_url: https://github.com/astrosteveo/fleetforge
++repo_name: astrosteveo/fleetforge
++edit_uri: edit/main/docs/
++docs_dir: docs
++
++theme:
++  name: material
++  icon:
++    logo: material/cube-outline
++  palette:
++  # Palette toggle for light mode
++  - media: "(prefers-color-scheme: light)"
++    scheme: default
++    primary: blue
++    accent: blue
++    toggle:
++      icon: material/brightness-7
++      name: Switch to dark mode
++  # Palette toggle for dark mode
++  - media: "(prefers-color-scheme: dark)"
++    scheme: slate
++    primary: blue
++    accent: blue
++    toggle:
++      icon: material/brightness-4
++      name: Switch to light mode
++  features:
++  - navigation.tabs
++  - navigation.sections
++  - navigation.expand
++  - navigation.path
++  - navigation.top
++  - navigation.instant
++  - search.highlight
++  - search.share
++  - toc.follow
++  - content.action.edit
++  - content.code.copy
++  - content.code.annotate
++  - content.tooltips
++
++plugins:
++- search
++- git-revision-date-localized:
++    enable_creation_date: true
++    fallback_to_build_date: true
++- git-authors:
++    enabled: true
++- exclude:
++    glob:
++    - README.md
++
++markdown_extensions:
++- pymdownx.highlight:
++    anchor_linenums: true
++    line_spans: __span
++    pygments_lang_class: true
++- pymdownx.inlinehilite
++- pymdownx.snippets
++- pymdownx.superfences:
++    custom_fences:
++    - name: mermaid
++      class: mermaid
++      format: !!python/name:pymdownx.superfences.fence_code_format ""
++- pymdownx.tabbed:
++    alternate_style: true
++- admonition
++- pymdownx.details
++- attr_list
++- md_in_html
++- tables
++- footnotes
++- pymdownx.critic
++- pymdownx.caret
++- pymdownx.keys
++- pymdownx.mark
++- pymdownx.tilde
++- pymdownx.emoji:
++    emoji_index: !!python/name:material.extensions.emoji.twemoji ""
++    emoji_generator:
++
++      !!python/name:material.extensions.emoji.to_svg ""
++nav:
++- Home: index.md
++- Getting Started:
++  - Quick Start: getting-started/quick-start.md
++  - Installation Guide: getting-started/installation.md
++  - Development Environment: getting-started/development.md
++- Platform:
++  - Architecture Overview: architecture/design.md
++  - Production Readiness Design: architecture/production-readiness-design.md
++  - API Reference: api-reference/index.md
++- Product & Planning:
++  - Product Requirements: product/prd.md
++  - System Requirements: product/requirements.md
++  - Implementation Tasks: product/tasks.md
++  - Production Readiness Plan: product/production-readiness-plan.md
++  - Readiness Review Workflow: product/production-readiness-review-process.md
++  - Readiness Taskboard: product/production-readiness-tasks.md
++- Operations:
++  - Operations Overview: ops/index.md
++  - Elasticity Demo Runbook: ops/runbook-elasticity-demo.md
++  - Monitoring and Observability: ops/monitoring.md
++  - Observability Dashboards: ops/dashboards.md
++  - Alerting and Escalations: ops/alerts.md
++- Research Library:
++  - Research Overview: research/index.md
++  - Elastic Fabric Paper Notes: research/cell-mesh-elastic-fabric-paper.md
++  - World Partitioning Paper Notes: research/world-partitioning-academic-paper.md
++- Architecture Decisions:
++  - ADR Overview: adr/index.md
++  - ADR-0001 • Initial MVP Scope: adr/ADR-0001-initial-mvp-scope.md
++- Contributing:
++  - Documentation Overview: contributing/documentation-overview.md
++  - Docs Site Playbook: contributing/docs-site-playbook.md
++
++extra:
++  social:
++  - icon: fontawesome/brands/github
++    link: https://github.com/astrosteveo/fleetforge
++  version:
++    provider: mike
++
++extra_css:
++- stylesheets/extra.css
+diff --git a/requirements.txt b/requirements.txt
+new file mode 100644
+index 0000000..099b7c1
+--- /dev/null
++++ b/requirements.txt
+@@ -0,0 +1,15 @@
++# MkDocs Material Documentation Dependencies
++
++# Core MkDocs
++mkdocs-material
++
++# Plugins
++mkdocs-git-revision-date-localized-plugin
++mkdocs-git-authors-plugin
++mkdocs-mermaid2-plugin
++mkdocs-exclude
++
++# Optional: Additional useful plugins
++mkdocs-awesome-pages-plugin
++mkdocs-redirects
++mkdocs-minify-plugin
+\ No newline at end of file

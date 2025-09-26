@@ -38,25 +38,25 @@ FleetForge implements a cell-mesh elastic fabric that enables massively multipla
 │  WorldSpec      │   Predictive    │   Placement     │    Migration            │
 │  Controller     │   Autoscaler    │   Optimizer     │    Coordinator          │
 └─────────────────┴─────────────────┴─────────────────┴─────────────────────────┘
-																			│
-										┌─────────────────┼─────────────────┐
-										│                 │                 │
-							┌─────▼─────┐    ┌─────▼─────┐    ┌─────▼─────┐
-							│  Cluster  │    │  Cluster  │    │  Cluster  │
-							│    A      │◄──►│    B      │◄──►│    C      │
-							│           │    │           │    │           │
-							└───────────┘    └───────────┘    └───────────┘
-										│                 │                 │
-							┌─────▼─────┐    ┌─────▼─────┐    ┌─────▼─────┐
-							│Service    │    │Service    │    │Service    │
-							│Mesh       │    │Mesh       │    │Mesh       │
-							│(Cilium)   │    │(Cilium)   │    │(Cilium)   │
-							└─────┬─────┘    └─────┬─────┘    └─────┬─────┘
-										│                 │                 │
-							┌─────▼─────┐    ┌─────▼─────┐    ┌─────▼─────┐
-							│Cell Pod   │    │Cell Pod   │    │Cell Pod   │
-							│Instances  │    │Instances  │    │Instances  │
-							└───────────┘    └───────────┘    └───────────┘
+                                                                            │
+                                        ┌─────────────────┼─────────────────┐
+                                        │                 │                 │
+                            ┌─────▼─────┐    ┌─────▼─────┐    ┌─────▼─────┐
+                            │  Cluster  │    │  Cluster  │    │  Cluster  │
+                            │    A      │◄──►│    B      │◄──►│    C      │
+                            │           │    │           │    │           │
+                            └───────────┘    └───────────┘    └───────────┘
+                                        │                 │                 │
+                            ┌─────▼─────┐    ┌─────▼─────┐    ┌─────▼─────┐
+                            │Service    │    │Service    │    │Service    │
+                            │Mesh       │    │Mesh       │    │Mesh       │
+                            │(Cilium)   │    │(Cilium)   │    │(Cilium)   │
+                            └─────┬─────┘    └─────┬─────┘    └─────┬─────┘
+                                        │                 │                 │
+                            ┌─────▼─────┐    ┌─────▼─────┐    ┌─────▼─────┐
+                            │Cell Pod   │    │Cell Pod   │    │Cell Pod   │
+                            │Instances  │    │Instances  │    │Instances  │
+                            └───────────┘    └───────────┘    └───────────┘
 ```
 
 ### 3.2 Component Architecture
@@ -106,17 +106,17 @@ FleetForge implements a cell-mesh elastic fabric that enables massively multipla
 
 ```
 Player Client
-		 │
-		 ▼
+         │
+         ▼
 Gateway Service ──────────► Policy Engine
-		 │                           │
-		 ▼                           ▼
+         │                           │
+         ▼                           ▼
 Session Router ◄────────── Cell Selection
-		 │
-		 ▼
+         │
+         ▼
 Target Cell Pod
-		 │
-		 ▼
+         │
+         ▼
 State Manager ──────────► Persistence Layer
 ```
 
@@ -124,11 +124,11 @@ State Manager ──────────► Persistence Layer
 
 ```
 Source Cell ─────► Migration Coordinator ◄───── Target Cell
-		 │                        │                      │
-		 ▼                        ▼                      ▼
+         │                        │                      │
+         ▼                        ▼                      ▼
 State Snapshot ──────► Write-Ahead Log ──────► State Replay
-		 │                        │                      │
-		 ▼                        ▼                      ▼
+         │                        │                      │
+         ▼                        ▼                      ▼
 Dual Authority ──────► Authority Transfer ──────► Cleanup
 ```
 
@@ -136,10 +136,10 @@ Dual Authority ──────► Authority Transfer ──────► Cl
 
 ```
 Cluster A Cell ──────► Service Mesh ──────► Cluster B Cell
-		 │                       │                      │
-		 ▼                       ▼                      ▼
+         │                       │                      │
+         ▼                       ▼                      ▼
 mTLS Encryption ──────► Cross-Cluster ──────► Identity
-													 Routing             Verification
+                                                     Routing             Verification
 ```
 
 ## 5. Interface Specifications
@@ -150,68 +150,68 @@ mTLS Encryption ──────► Cross-Cluster ──────► Identi
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-	name: worldspecs.fleetforge.io
+    name: worldspecs.fleetforge.io
 spec:
-	group: fleetforge.io
-	versions:
-	- name: v1
-		schema:
-			openAPIV3Schema:
-				type: object
-				properties:
-					spec:
-						type: object
-						properties:
-							topology:
-								type: object
-								properties:
-									initialCells:
-										type: integer
-										minimum: 1
-									maxCellsPerCluster:
-										type: integer
-									worldBoundaries:
-										type: object
-										properties:
-											xMin: {type: number}
-											xMax: {type: number}
-											yMin: {type: number}
-											yMax: {type: number}
-							capacity:
-								type: object
-								properties:
-									maxPlayersPerCell:
-										type: integer
-										default: 100
-									cpuLimitPerCell:
-										type: string
-										default: "1000m"
-									memoryLimitPerCell:
-										type: string
-										default: "2Gi"
-							scaling:
-								type: object
-								properties:
-									scaleUpThreshold:
-										type: number
-										default: 0.8
-									scaleDownThreshold:
-										type: number
-										default: 0.3
-									predictiveEnabled:
-										type: boolean
-										default: true
-							persistence:
-								type: object
-								properties:
-									checkpointInterval:
-										type: string
-										default: "5m"
-									storageClass:
-										type: string
-									retentionPeriod:
-										type: string
-										default: "7d"
+    group: fleetforge.io
+    versions:
+    - name: v1
+        schema:
+            openAPIV3Schema:
+                type: object
+                properties:
+                    spec:
+                        type: object
+                        properties:
+                            topology:
+                                type: object
+                                properties:
+                                    initialCells:
+                                        type: integer
+                                        minimum: 1
+                                    maxCellsPerCluster:
+                                        type: integer
+                                    worldBoundaries:
+                                        type: object
+                                        properties:
+                                            xMin: {type: number}
+                                            xMax: {type: number}
+                                            yMin: {type: number}
+                                            yMax: {type: number}
+                            capacity:
+                                type: object
+                                properties:
+                                    maxPlayersPerCell:
+                                        type: integer
+                                        default: 100
+                                    cpuLimitPerCell:
+                                        type: string
+                                        default: "1000m"
+                                    memoryLimitPerCell:
+                                        type: string
+                                        default: "2Gi"
+                            scaling:
+                                type: object
+                                properties:
+                                    scaleUpThreshold:
+                                        type: number
+                                        default: 0.8
+                                    scaleDownThreshold:
+                                        type: number
+                                        default: 0.3
+                                    predictiveEnabled:
+                                        type: boolean
+                                        default: true
+                            persistence:
+                                type: object
+                                properties:
+                                    checkpointInterval:
+                                        type: string
+                                        default: "5m"
+                                    storageClass:
+                                        type: string
+                                    retentionPeriod:
+                                        type: string
+                                        default: "7d"
 ```
 
 ### 5.2 Cell API Specification
@@ -219,28 +219,28 @@ spec:
 ```go
 // Cell represents a game simulation instance
 type Cell struct {
-		ID          string
-		Boundaries  WorldBounds
-		Players     []PlayerID
-		Capacity    CellCapacity
-		State       CellState
-		Neighbors   []CellID
+        ID          string
+        Boundaries  WorldBounds
+        Players     []PlayerID
+        Capacity    CellCapacity
+        State       CellState
+        Neighbors   []CellID
 }
 
 // CellManager interface for cell lifecycle operations
 type CellManager interface {
-		CreateCell(spec CellSpec) (*Cell, error)
-		MigrateCell(cellID string, targetCluster string) error
-		SplitCell(cellID string, splitBoundary WorldBounds) ([]Cell, error)
-		MergeCell(cellIDs []string) (*Cell, error)
-		GetCellHealth(cellID string) (*HealthStatus, error)
+        CreateCell(spec CellSpec) (*Cell, error)
+        MigrateCell(cellID string, targetCluster string) error
+        SplitCell(cellID string, splitBoundary WorldBounds) ([]Cell, error)
+        MergeCell(cellIDs []string) (*Cell, error)
+        GetCellHealth(cellID string) (*HealthStatus, error)
 }
 
 // PlayerSession interface for session management
 type PlayerSession interface {
-		AssignToCell(playerID string, cellID string) error
-		HandoffPlayer(playerID string, sourceCellID, targetCellID string) error
-		GetPlayerLocation(playerID string) (*WorldPosition, error)
+        AssignToCell(playerID string, cellID string) error
+        HandoffPlayer(playerID string, sourceCellID, targetCellID string) error
+        GetPlayerLocation(playerID string) (*WorldPosition, error)
 }
 ```
 
@@ -251,17 +251,17 @@ type PlayerSession interface {
 apiVersion: cilium.io/v2alpha1
 kind: CiliumClusterMesh
 metadata:
-	name: fleetforge-mesh
+    name: fleetforge-mesh
 spec:
-	clusters:
-	- name: cluster-a
-		endpoint: cluster-a.mesh.local:2379
-	- name: cluster-b
-		endpoint: cluster-b.mesh.local:2379
-	- name: cluster-c
-		endpoint: cluster-c.mesh.local:2379
-	enableEndpointSliceMirroring: true
-	enableExternalWorkloads: false
+    clusters:
+    - name: cluster-a
+        endpoint: cluster-a.mesh.local:2379
+    - name: cluster-b
+        endpoint: cluster-b.mesh.local:2379
+    - name: cluster-c
+        endpoint: cluster-c.mesh.local:2379
+    enableEndpointSliceMirroring: true
+    enableExternalWorkloads: false
 ```
 
 ## 6. Data Models
@@ -270,25 +270,25 @@ spec:
 
 ```go
 type CellState struct {
-		// Spatial boundaries
-		Boundaries   WorldBounds     `json:"boundaries"`
+        // Spatial boundaries
+        Boundaries   WorldBounds     `json:"boundaries"`
     
-		// Player management
-		Players      []PlayerState   `json:"players"`
-		MaxPlayers   int            `json:"maxPlayers"`
+        // Player management
+        Players      []PlayerState   `json:"players"`
+        MaxPlayers   int            `json:"maxPlayers"`
     
-		// Simulation state
-		Entities     []GameEntity   `json:"entities"`
-		Environment  EnvironmentState `json:"environment"`
+        // Simulation state
+        Entities     []GameEntity   `json:"entities"`
+        Environment  EnvironmentState `json:"environment"`
     
-		// Performance metrics
-		TickRate     int            `json:"tickRate"`
-		CPUUsage     float64        `json:"cpuUsage"`
-		MemoryUsage  int64          `json:"memoryUsage"`
+        // Performance metrics
+        TickRate     int            `json:"tickRate"`
+        CPUUsage     float64        `json:"cpuUsage"`
+        MemoryUsage  int64          `json:"memoryUsage"`
     
-		// Migration metadata
-		Version      int64          `json:"version"`
-		Checkpoint   time.Time      `json:"lastCheckpoint"`
+        // Migration metadata
+        Version      int64          `json:"version"`
+        Checkpoint   time.Time      `json:"lastCheckpoint"`
 }
 ```
 
@@ -296,12 +296,12 @@ type CellState struct {
 
 ```go
 type PlayerState struct {
-		ID           string         `json:"id"`
-		Position     WorldPosition  `json:"position"`
-		Velocity     Vector3        `json:"velocity"`
-		AOIRadius    float64        `json:"aoiRadius"`
-		Session      SessionInfo    `json:"session"`
-		LastUpdate   time.Time      `json:"lastUpdate"`
+        ID           string         `json:"id"`
+        Position     WorldPosition  `json:"position"`
+        Velocity     Vector3        `json:"velocity"`
+        AOIRadius    float64        `json:"aoiRadius"`
+        Session      SessionInfo    `json:"session"`
+        LastUpdate   time.Time      `json:"lastUpdate"`
 }
 ```
 
@@ -309,16 +309,16 @@ type PlayerState struct {
 
 ```go
 type MigrationState struct {
-		ID              string        `json:"id"`
-		SourceCell      string        `json:"sourceCell"`
-		TargetCell      string        `json:"targetCell"`
-		SourceCluster   string        `json:"sourceCluster"`
-		TargetCluster   string        `json:"targetCluster"`
-		Phase           MigrationPhase `json:"phase"`
-		StartTime       time.Time     `json:"startTime"`
-		StateSnapshot   []byte        `json:"stateSnapshot"`
-		WriteAheadLog   []LogEntry    `json:"writeAheadLog"`
-		AffectedPlayers []string      `json:"affectedPlayers"`
+        ID              string        `json:"id"`
+        SourceCell      string        `json:"sourceCell"`
+        TargetCell      string        `json:"targetCell"`
+        SourceCluster   string        `json:"sourceCluster"`
+        TargetCluster   string        `json:"targetCluster"`
+        Phase           MigrationPhase `json:"phase"`
+        StartTime       time.Time     `json:"startTime"`
+        StateSnapshot   []byte        `json:"stateSnapshot"`
+        WriteAheadLog   []LogEntry    `json:"writeAheadLog"`
+        AffectedPlayers []string      `json:"affectedPlayers"`
 }
 ```
 
@@ -345,11 +345,11 @@ type MigrationState struct {
 
 ```
 Internet ──► Load Balancer ──► Gateway Pods ──► Cell Pods
-							│                     │              │
-							▼                     ▼              ▼
-				 DDoS Protection      Session Routing   Game Logic
-				 Rate Limiting        Policy Engine     State Management
-				 SSL Termination     Health Checking   AOI Filtering
+                            │                     │              │
+                            ▼                     ▼              ▼
+                 DDoS Protection      Session Routing   Game Logic
+                 Rate Limiting        Policy Engine     State Management
+                 SSL Termination     Health Checking   AOI Filtering
 ```
 
 ### 7.3 Interest Management
@@ -552,6 +552,45 @@ Internet ──► Load Balancer ──► Gateway Pods ──► Cell Pods
 - Cloud databases for persistent storage
 - Managed monitoring (Prometheus, Grafana)
 - Secrets management (Vault, Cloud KMS)
+
+## 14. Documentation Platform Architecture
+
+### 14.1 Objectives
+
+- Deliver an always-current documentation site that mirrors `main` without manual intervention
+- Provide reliable preview artifacts for pull requests so reviewers can validate rendered output
+- Enforce accessibility and quality gates (WCAG 2.2 AA, strict MkDocs builds) before publication
+
+### 14.2 CI/CD Workflow
+
+```mermaid
+graph TD
+    A[Docs change detected] --> B[GitHub Actions build job]
+    B --> C[Install pinned MkDocs toolchain]
+    C --> D[Run mkdocs build --clean --strict]
+    D -->|Pull request| E[Upload site artifact]
+    D -->|Main branch| F[Configure GitHub Pages]
+    F --> G[Upload rendered site]
+    G --> H[Deploy via actions/deploy-pages]
+```
+
+- **Build Job**: Executes on every push or pull request touching documentation assets, fetching full git history so metadata plugins remain accurate.
+- **Toolchain Step**: Installs dependency versions pinned in `requirements.txt` to guarantee reproducible builds.
+- **Strict Build Step**: Treats warnings (including accessibility or link issues surfaced by MkDocs Material) as failures, blocking regressions.
+- **PR Artifact**: Archives the generated `site/` output as an artifact to satisfy REQ-067 without exposing pre-release pages publicly.
+- **Production Deploy**: Push events on `main` publish to GitHub Pages via the official Pages deploy action with ephemeral OIDC credentials.
+
+### 14.3 Quality Gates
+
+- **Accessibility Baseline**: WCAG 2.2 AA checklist incorporated into review SOP; future enhancement will integrate automated axe-core scanning.
+- **Dependency Audits**: Scheduled workflow reviews pinned versions quarterly and surfaces CVEs via Dependabot alerts.
+- **Cache Strategy**: pip cache keyed by the `requirements.txt` hash keeps builds fast while respecting deterministic installs.
+
+### 14.4 Operational Considerations
+
+- **Secrets Management**: No persistent tokens are required; GitHub Pages deploy action leverages ephemeral tokens via OIDC.
+- **Rollback**: Re-running the workflow on a previous commit redeploys the prior site state, providing instant rollback.
+- **Local Development**: Contributors use `.venv-docs` with the pinned toolchain to mirror CI exactly, reducing "works on my machine" drift.
 
 ---
 
