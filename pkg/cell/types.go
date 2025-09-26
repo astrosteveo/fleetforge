@@ -120,10 +120,7 @@ type CellManager interface {
 
 	// Scaling operations
 	SplitCell(cellID CellID, splitThreshold float64) ([]*Cell, error)
-	MergeCells(cellID1, cellID2 CellID) (*Cell, error)
-
-	// Annotation-based merge operations
-	ProcessMergeAnnotation(annotation MergeAnnotation) (*Cell, error)
+	ManualSplitCell(cellID CellID, userInfo map[string]interface{}) ([]*Cell, error)
 
 	// Event handling
 	GetEvents() []CellEvent

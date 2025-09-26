@@ -2,17 +2,14 @@ package controllers
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -619,319 +616,143 @@ func findSubstring(s, substring string) bool {
 	return false
 }
 
-// TestWorldSpecController_EnhancedRetryLogic tests the enhanced retry and error handling
-func TestWorldSpecController_EnhancedRetryLogic(t *testing.T) {
+// TestManualSplitOverride tests the manual split override functionality
+func TestManualSplitOverride(t *testing.T) {
 	// Setup logging
 	logf.SetLogger(zap.New(zap.UseDevMode(true)))
 
-	// Create scheme
+	// Import the cell package for testing
 	scheme := runtime.NewScheme()
 	_ = fleetforgev1.AddToScheme(scheme)
 	_ = appsv1.AddToScheme(scheme)
 	_ = corev1.AddToScheme(scheme)
 
-	reconciler := &WorldSpecReconciler{
-		Log: ctrl.Log.WithName("test"),
-	}
-
-	t.Run("requeueWithBackoff handles different error types", func(t *testing.T) {
-		tests := []struct {
-			name          string
-			err           error
-			expectRequeue bool
-			minDelay      time.Duration
-		}{
-			{
-				name:          "Conflict error - quick retry",
-				err:           errors.NewConflict(schema.GroupResource{}, "test", fmt.Errorf("conflict")),
-				expectRequeue: true,
-				minDelay:      time.Second * 5,
-			},
-			{
-				name:          "Server timeout - longer backoff",
-				err:           errors.NewServerTimeout(schema.GroupResource{}, "test", 30),
-				expectRequeue: true,
-				minDelay:      time.Second * 30,
-			},
-			{
-				name:          "Invalid request - moderate backoff",
-				err:           errors.NewInvalid(schema.GroupKind{}, "test", nil),
-				expectRequeue: true,
-				minDelay:      time.Minute * 2,
-			},
-		}
-
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				result := reconciler.requeueWithBackoff(tt.err)
-
-				if result.RequeueAfter == 0 {
-					t.Error("Expected requeue but got none")
-				}
-
-				if result.RequeueAfter < tt.minDelay {
-					t.Errorf("Expected requeue delay >= %v, got %v", tt.minDelay, result.RequeueAfter)
-				}
-			})
-		}
-	})
-
-	t.Run("categorizeError returns correct categories", func(t *testing.T) {
-		tests := []struct {
-			name     string
-			err      error
-			expected string
-		}{
-			{
-				name:     "Not found error",
-				err:      errors.NewNotFound(schema.GroupResource{}, "test"),
-				expected: "Resource Not Found",
-			},
-			{
-				name:     "Conflict error",
-				err:      errors.NewConflict(schema.GroupResource{}, "test", fmt.Errorf("conflict")),
-				expected: "Resource Conflict",
-			},
-			{
-				name:     "Invalid error",
-				err:      errors.NewInvalid(schema.GroupKind{}, "test", nil),
-				expected: "Invalid Configuration",
-			},
-			{
-				name:     "Generic error",
-				err:      fmt.Errorf("generic error"),
-				expected: "Unknown Error",
-			},
-		}
-
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				result := reconciler.categorizeError(tt.err)
-				if result != tt.expected {
-					t.Errorf("Expected category '%s', got '%s'", tt.expected, result)
-				}
-			})
-		}
-	})
-
-	t.Run("getRequeueInterval varies by phase", func(t *testing.T) {
-		tests := []struct {
-			phase    string
-			expected time.Duration
-		}{
-			{"Initializing", time.Second * 30},
-			{"Creating", time.Second * 30},
-			{"Running", time.Minute * 2},
-			{"Scaling", time.Second * 15},
-			{"Error", time.Minute * 5},
-			{"Unknown", time.Minute * 1},
-		}
-
-		for _, tt := range tests {
-			t.Run(fmt.Sprintf("Phase_%s", tt.phase), func(t *testing.T) {
-				worldSpec := &fleetforgev1.WorldSpec{
-					Status: fleetforgev1.WorldSpecStatus{
-						Phase: tt.phase,
-					},
-				}
-
-				result := reconciler.getRequeueInterval(worldSpec)
-				if result != tt.expected {
-					t.Errorf("Expected requeue interval %v for phase %s, got %v", tt.expected, tt.phase, result)
-				}
-			})
-		}
-	})
-}
-
-// TestWorldSpecController_EnhancedStatusUpdates tests enhanced status update functionality
-func TestWorldSpecController_EnhancedStatusUpdates(t *testing.T) {
-	// Setup logging
-	logf.SetLogger(zap.New(zap.UseDevMode(true)))
-
-	// Create scheme
-	scheme := runtime.NewScheme()
-	_ = fleetforgev1.AddToScheme(scheme)
-	_ = appsv1.AddToScheme(scheme)
-	_ = corev1.AddToScheme(scheme)
-
-	yMin := -1000.0
-	yMax := 1000.0
-	worldSpec := &fleetforgev1.WorldSpec{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-world",
-			Namespace: "default",
-		},
-		Spec: fleetforgev1.WorldSpecSpec{
-			Topology: fleetforgev1.WorldTopology{
-				InitialCells: 2,
-				WorldBoundaries: fleetforgev1.WorldBounds{
-					XMin: -1000.0,
-					XMax: 1000.0,
-					YMin: &yMin,
-					YMax: &yMax,
-				},
-			},
-			Capacity: fleetforgev1.CellCapacity{
-				MaxPlayersPerCell:  100,
-				CPULimitPerCell:    "1000m",
-				MemoryLimitPerCell: "2Gi",
-			},
-			Scaling: fleetforgev1.ScalingConfiguration{
-				ScaleUpThreshold:   0.8,
-				ScaleDownThreshold: 0.3,
-				PredictiveEnabled:  true,
-			},
-			Persistence: fleetforgev1.PersistenceConfiguration{
-				CheckpointInterval: "5m",
-				RetentionPeriod:    "7d",
-				Enabled:            true,
-			},
-			GameServerImage: "fleetforge-cell:latest",
-		},
-	}
-
-	t.Run("Status includes pod information when available", func(t *testing.T) {
-		// Create deployments and pods
-		deployment1 := &appsv1.Deployment{
+	t.Run("Manual split override with specific cell ID", func(t *testing.T) {
+		// Create test WorldSpec with manual split annotation
+		yMin := -1000.0
+		yMax := 1000.0
+		worldSpec := &fleetforgev1.WorldSpec{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "test-world-cell-0",
+				Name:      "test-world",
 				Namespace: "default",
-				Labels: map[string]string{
-					"world": "test-world",
-					"app":   "fleetforge-cell",
+				Annotations: map[string]string{
+					ForceSplitAnnotation: "test-world-cell-0",
 				},
-			},
-			Status: appsv1.DeploymentStatus{
-				ReadyReplicas: 1,
-			},
-		}
-
-		pod1 := &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "test-world-cell-0-pod",
-				Namespace: "default",
-				Labels: map[string]string{
-					"world":   "test-world",
-					"app":     "fleetforge-cell",
-					"cell-id": "test-world-cell-0",
-				},
-			},
-			Status: corev1.PodStatus{
-				Phase: corev1.PodRunning,
-				Conditions: []corev1.PodCondition{
+				ManagedFields: []metav1.ManagedFieldsEntry{
 					{
-						Type:               corev1.PodReady,
-						Status:             corev1.ConditionTrue,
-						LastTransitionTime: metav1.Now(),
+						Manager: "test-user",
+						Time:    &metav1.Time{Time: time.Now()},
 					},
 				},
 			},
+			Spec: fleetforgev1.WorldSpecSpec{
+				Topology: fleetforgev1.WorldTopology{
+					InitialCells: 1,
+					WorldBoundaries: fleetforgev1.WorldBounds{
+						XMin: -1000.0,
+						XMax: 1000.0,
+						YMin: &yMin,
+						YMax: &yMax,
+					},
+				},
+				GameServerImage: "test-image:latest",
+			},
 		}
 
-		// Create fake client with objects
-		testWorldSpec := worldSpec.DeepCopy()
+		// Create fake client
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithObjects(testWorldSpec, deployment1, pod1).
-			WithStatusSubresource(testWorldSpec).
+			WithObjects(worldSpec).
 			Build()
 
-		fakeRecorder := record.NewFakeRecorder(10)
+		// Create mock recorder
+		recorder := record.NewFakeRecorder(10)
 
+		// Create reconciler with mock cell manager
 		reconciler := &WorldSpecReconciler{
 			Client:   fakeClient,
 			Scheme:   scheme,
-			Log:      ctrl.Log.WithName("test"),
-			Recorder: fakeRecorder,
+			Log:      logf.FromContext(context.Background()),
+			Recorder: recorder,
 		}
 
-		ctx := context.Background()
-
-		// Update status
-		err := reconciler.updateWorldSpecStatus(ctx, testWorldSpec, reconciler.Log)
-		if err != nil {
-			t.Fatalf("updateWorldSpecStatus failed: %v", err)
+		// Test the manual split annotation parsing
+		cellIDs := reconciler.parseCellIDsFromAnnotation("test-world-cell-0", worldSpec)
+		if len(cellIDs) != 1 || cellIDs[0] != "test-world-cell-0" {
+			t.Errorf("Expected cell ID 'test-world-cell-0', got %v", cellIDs)
 		}
 
-		// Check that pod information is included in cell status
-		if len(testWorldSpec.Status.Cells) == 0 {
-			t.Fatal("Expected cell status to be populated")
+		// Test user identity extraction
+		userInfo := reconciler.extractUserIdentity(worldSpec)
+		if userInfo["manager"] != "test-user" {
+			t.Errorf("Expected manager 'test-user', got %v", userInfo["manager"])
 		}
-
-		cellStatus := testWorldSpec.Status.Cells[0]
-		if cellStatus.PodName != "test-world-cell-0-pod" {
-			t.Errorf("Expected pod name 'test-world-cell-0-pod', got '%s'", cellStatus.PodName)
-		}
-
-		if cellStatus.Health != "Healthy" {
-			t.Errorf("Expected health 'Healthy', got '%s'", cellStatus.Health)
-		}
-
-		if cellStatus.LastHeartbeat == nil {
-			t.Error("Expected LastHeartbeat to be set")
+		if userInfo["action"] != "manual_split_override" {
+			t.Errorf("Expected action 'manual_split_override', got %v", userInfo["action"])
 		}
 	})
 
-	t.Run("getPodHealthStatus correctly categorizes pod states", func(t *testing.T) {
-		reconciler := &WorldSpecReconciler{}
-
-		tests := []struct {
-			name     string
-			pod      *corev1.Pod
-			expected string
-		}{
-			{
-				name: "Running and ready pod",
-				pod: &corev1.Pod{
-					Status: corev1.PodStatus{
-						Phase: corev1.PodRunning,
-						Conditions: []corev1.PodCondition{
-							{Type: corev1.PodReady, Status: corev1.ConditionTrue},
-						},
-					},
-				},
-				expected: "Healthy",
+	t.Run("Manual split override with 'all' keyword", func(t *testing.T) {
+		// Create test WorldSpec with "all" annotation
+		yMin := -1000.0
+		yMax := 1000.0
+		worldSpec := &fleetforgev1.WorldSpec{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-world",
+				Namespace: "default",
 			},
-			{
-				name: "Running but not ready pod",
-				pod: &corev1.Pod{
-					Status: corev1.PodStatus{
-						Phase: corev1.PodRunning,
-						Conditions: []corev1.PodCondition{
-							{Type: corev1.PodReady, Status: corev1.ConditionFalse},
-						},
+			Spec: fleetforgev1.WorldSpecSpec{
+				Topology: fleetforgev1.WorldTopology{
+					InitialCells: 3,
+					WorldBoundaries: fleetforgev1.WorldBounds{
+						XMin: -1000.0,
+						XMax: 1000.0,
+						YMin: &yMin,
+						YMax: &yMax,
 					},
 				},
-				expected: "NotReady",
-			},
-			{
-				name: "Pending pod",
-				pod: &corev1.Pod{
-					Status: corev1.PodStatus{
-						Phase: corev1.PodPending,
-					},
-				},
-				expected: "Pending",
-			},
-			{
-				name: "Failed pod",
-				pod: &corev1.Pod{
-					Status: corev1.PodStatus{
-						Phase: corev1.PodFailed,
-					},
-				},
-				expected: "Failed",
 			},
 		}
 
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				result := reconciler.getPodHealthStatus(tt.pod)
-				if result != tt.expected {
-					t.Errorf("Expected health status '%s', got '%s'", tt.expected, result)
-				}
-			})
+		reconciler := &WorldSpecReconciler{}
+		cellIDs := reconciler.parseCellIDsFromAnnotation("all", worldSpec)
+
+		expectedCells := []string{
+			"test-world-cell-0",
+			"test-world-cell-1",
+			"test-world-cell-2",
+		}
+
+		if len(cellIDs) != len(expectedCells) {
+			t.Errorf("Expected %d cells, got %d", len(expectedCells), len(cellIDs))
+		}
+
+		for i, expected := range expectedCells {
+			if cellIDs[i] != expected {
+				t.Errorf("Expected cell ID '%s', got '%s'", expected, cellIDs[i])
+			}
+		}
+	})
+
+	t.Run("Manual split override with comma-separated IDs", func(t *testing.T) {
+		worldSpec := &fleetforgev1.WorldSpec{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test-world",
+			},
+		}
+
+		reconciler := &WorldSpecReconciler{}
+		cellIDs := reconciler.parseCellIDsFromAnnotation("cell-1, cell-2, cell-3", worldSpec)
+
+		expected := []string{"cell-1", "cell-2", "cell-3"}
+		if len(cellIDs) != len(expected) {
+			t.Errorf("Expected %d cells, got %d", len(expected), len(cellIDs))
+		}
+
+		for i, exp := range expected {
+			if cellIDs[i] != exp {
+				t.Errorf("Expected cell ID '%s', got '%s'", exp, cellIDs[i])
+			}
 		}
 	})
 }

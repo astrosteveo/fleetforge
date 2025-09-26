@@ -19,6 +19,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -36,14 +37,21 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	fleetforgev1 "github.com/astrosteveo/fleetforge/api/v1"
+	"github.com/astrosteveo/fleetforge/pkg/cell"
+)
+
+const (
+	// ForceSplitAnnotation is the annotation key used to trigger manual cell splits
+	ForceSplitAnnotation = "fleetforge.io/force-split"
 )
 
 // WorldSpecReconciler reconciles a WorldSpec object
 type WorldSpecReconciler struct {
 	client.Client
-	Scheme   *runtime.Scheme
-	Log      logr.Logger
-	Recorder record.EventRecorder
+	Scheme      *runtime.Scheme
+	Log         logr.Logger
+	Recorder    record.EventRecorder
+	CellManager cell.CellManager
 }
 
 //+kubebuilder:rbac:groups=fleetforge.io,resources=worldspecs,verbs=get;list;watch;create;update;patch;delete
@@ -86,6 +94,15 @@ func (r *WorldSpecReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			fmt.Sprintf("World %s initialization started", worldSpec.Name))
 	}
 
+	// Check for manual split override annotation
+	if forceSplitValue, hasAnnotation := worldSpec.Annotations[ForceSplitAnnotation]; hasAnnotation {
+		if err := r.handleManualSplitOverride(ctx, worldSpec, forceSplitValue, log); err != nil {
+			log.Error(err, "Failed to handle manual split override")
+			r.Recorder.Event(worldSpec, corev1.EventTypeWarning, "ManualSplitFailed",
+				fmt.Sprintf("Manual split override failed: %v", err))
+		}
+	}
+
 	// Handle creation/update of cell pods
 	result, err := r.reconcileCells(ctx, worldSpec, log)
 	if err != nil {
@@ -100,9 +117,13 @@ func (r *WorldSpecReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return r.requeueWithBackoff(err), err
 	}
 
-	// Determine requeue interval based on world phase
-	requeueInterval := r.getRequeueInterval(worldSpec)
-	return ctrl.Result{RequeueAfter: requeueInterval}, nil
+	// Requeue for status updates and annotation monitoring
+	if _, hasAnnotation := worldSpec.Annotations[ForceSplitAnnotation]; hasAnnotation {
+		// Aggressive polling if manual split annotation is present
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	}
+	// Default (less aggressive) polling interval
+	return ctrl.Result{RequeueAfter: 1 * time.Minute}, nil
 }
 
 // reconcileCells manages the lifecycle of cell pods
@@ -680,6 +701,144 @@ func getStringValue(ptr *string, defaultValue string) string {
 		return defaultValue
 	}
 	return *ptr
+}
+
+// handleManualSplitOverride processes manual split override annotations
+func (r *WorldSpecReconciler) handleManualSplitOverride(ctx context.Context, worldSpec *fleetforgev1.WorldSpec, cellIDSpec string, log logr.Logger) error {
+	// Initialize cell manager if not already done
+	if r.CellManager == nil {
+		r.CellManager = cell.NewCellManager()
+	}
+
+	// Parse the annotation value - could be a specific cell ID or "all"
+	cellIDs := r.parseCellIDsFromAnnotation(cellIDSpec, worldSpec)
+
+	if len(cellIDs) == 0 {
+		return fmt.Errorf("no valid cell IDs found in annotation value: %s", cellIDSpec)
+	}
+
+	// Extract user identity from object metadata
+	userInfo := r.extractUserIdentity(worldSpec)
+
+	var splitErrors []string
+	successfulSplits := 0
+
+	for _, cellID := range cellIDs {
+		log.Info("Processing manual split override", "cellID", cellID, "userInfo", userInfo)
+
+		// Use CellManager to perform the manual split
+		childCells, err := r.CellManager.ManualSplitCell(cell.CellID(cellID), userInfo)
+		if err != nil {
+			splitErrors = append(splitErrors, fmt.Sprintf("cell %s: %v", cellID, err))
+			log.Error(err, "Manual split failed", "cellID", cellID)
+			continue
+		}
+
+		successfulSplits++
+		log.Info("Manual split successful", "cellID", cellID, "childCells", len(childCells))
+
+		// Record event for successful manual split
+		r.Recorder.Event(worldSpec, corev1.EventTypeNormal, "ManualOverride",
+			fmt.Sprintf("Cell %s manually split into %d children by user", cellID, len(childCells)))
+	}
+
+	// Remove the annotation after processing to prevent re-processing
+	if err := r.removeAnnotation(ctx, worldSpec, log); err != nil {
+		log.Error(err, "Failed to remove manual split annotation")
+		return err
+	}
+
+	// Record summary event
+	if successfulSplits > 0 {
+		r.Recorder.Event(worldSpec, corev1.EventTypeNormal, "ManualOverride",
+			fmt.Sprintf("Manual split override completed: %d successful, %d failed", successfulSplits, len(splitErrors)))
+	}
+
+	if len(splitErrors) > 0 {
+		return fmt.Errorf("manual split failures: %s", strings.Join(splitErrors, "; "))
+	}
+
+	return nil
+}
+
+// parseCellIDsFromAnnotation parses the annotation value to extract cell IDs
+func (r *WorldSpecReconciler) parseCellIDsFromAnnotation(value string, worldSpec *fleetforgev1.WorldSpec) []string {
+	value = strings.TrimSpace(value)
+
+	if value == "" {
+		return nil
+	}
+
+	// Handle "all" keyword to split all active cells
+	if strings.ToLower(value) == "all" {
+		var cellIDs []string
+		for i := int32(0); i < worldSpec.Spec.Topology.InitialCells; i++ {
+			cellID := fmt.Sprintf("%s-cell-%d", worldSpec.Name, i)
+			cellIDs = append(cellIDs, cellID)
+		}
+		return cellIDs
+	}
+
+	// Handle comma-separated cell IDs
+	cellIDs := strings.Split(value, ",")
+	var result []string
+	for _, cellID := range cellIDs {
+		cellID = strings.TrimSpace(cellID)
+		if cellID != "" {
+			result = append(result, cellID)
+		}
+	}
+
+	return result
+}
+
+// extractUserIdentity extracts user identity information from the object metadata
+func (r *WorldSpecReconciler) extractUserIdentity(worldSpec *fleetforgev1.WorldSpec) map[string]interface{} {
+	userInfo := make(map[string]interface{})
+
+	// Extract user information from annotations and managed fields
+	if worldSpec.Annotations != nil {
+		if user, exists := worldSpec.Annotations["kubectl.kubernetes.io/last-applied-by"]; exists {
+			userInfo["applied_by"] = user
+		}
+	}
+
+	// Extract user from managed fields (Kubernetes tracks who made changes)
+	if len(worldSpec.ManagedFields) > 0 {
+		latestField := worldSpec.ManagedFields[len(worldSpec.ManagedFields)-1]
+		if latestField.Manager != "" {
+			userInfo["manager"] = latestField.Manager
+		}
+		if latestField.Time != nil {
+			userInfo["timestamp"] = latestField.Time.Time
+		}
+	}
+
+	// Add world spec information for audit context
+	userInfo["resource"] = fmt.Sprintf("WorldSpec/%s", worldSpec.Name)
+	userInfo["namespace"] = worldSpec.Namespace
+	userInfo["action"] = "manual_split_override"
+
+	return userInfo
+}
+
+// removeAnnotation removes the force split annotation after processing
+func (r *WorldSpecReconciler) removeAnnotation(ctx context.Context, worldSpec *fleetforgev1.WorldSpec, log logr.Logger) error {
+	if worldSpec.Annotations == nil {
+		return nil
+	}
+
+	// Create a deep copy and remove the annotation from the copy
+	patch := worldSpec.DeepCopy()
+	delete(patch.Annotations, ForceSplitAnnotation)
+
+	// Use MergeFrom to patch only the annotation field
+	if err := r.Patch(ctx, patch, client.MergeFrom(worldSpec)); err != nil {
+		return fmt.Errorf("failed to remove annotation via patch: %w", err)
+	}
+
+	log.Info("Removed manual split annotation", "annotation", ForceSplitAnnotation)
+	return nil
 }
 
 // parseResourceQuantity parses a resource quantity string, logs errors, and uses contextually appropriate defaults.
