@@ -20,6 +20,9 @@ type DefaultCellManager struct {
 
 	// Split configuration
 	defaultSplitThreshold float64
+
+	// Metrics
+	metrics *PrometheusMetrics
 }
 
 // PlayerSessionInfo tracks player session information
@@ -31,6 +34,11 @@ type PlayerSessionInfo struct {
 
 // NewCellManager creates a new cell manager
 func NewCellManager() CellManager {
+	return NewCellManagerWithMetrics(nil)
+}
+
+// NewCellManagerWithMetrics creates a new cell manager with optional metrics
+func NewCellManagerWithMetrics(metrics *PrometheusMetrics) CellManager {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &DefaultCellManager{
@@ -40,6 +48,7 @@ func NewCellManager() CellManager {
 		ctx:                   ctx,
 		cancel:                cancel,
 		defaultSplitThreshold: 0.8, // 80% capacity threshold by default
+		metrics:               metrics,
 	}
 }
 
@@ -486,15 +495,72 @@ func (m *DefaultCellManager) SplitCell(cellID CellID, splitThreshold float64) ([
 		childCells = append(childCells, childCell)
 	}
 
-	// Redistribute players to child cells based on position
-	redistributedPlayers := 0
-	for _, player := range parentState.Players {
-		targetChildID := m.findTargetCell(player.Position, childCells)
-		if targetChildID != "" {
-			if err := m.reassignPlayer(player.ID, cellID, targetChildID); err == nil {
-				redistributedPlayers++
+	// Wait for child cells to become ready before redistribution
+	maxWaitTime := time.Millisecond * 200 // Give cells time to start
+	readyCheckInterval := time.Millisecond * 10
+
+	for attempts := 0; attempts < int(maxWaitTime/readyCheckInterval); attempts++ {
+		allReady := true
+		for _, child := range childCells {
+			if !child.GetState().Ready {
+				allReady = false
+				break
 			}
 		}
+		if allReady {
+			break
+		}
+		time.Sleep(readyCheckInterval)
+	}
+
+	// Redistribute players to child cells based on position with metrics tracking
+	redistributionStart := time.Now()
+	initialPlayerCount := parentState.PlayerCount
+	redistributedPlayers := 0
+	redistributionErrors := 0
+
+	// Process players in batches for better performance
+	const batchSize = 10
+	playerSlice := make([]*PlayerState, 0, len(parentState.Players))
+	for _, player := range parentState.Players {
+		playerSlice = append(playerSlice, player)
+	}
+
+	// Redistribute in batches
+	for i := 0; i < len(playerSlice); i += batchSize {
+		end := i + batchSize
+		if end > len(playerSlice) {
+			end = len(playerSlice)
+		}
+
+		// Process batch
+		for j := i; j < end; j++ {
+			player := playerSlice[j]
+			targetChildID := m.findTargetCell(player.Position, childCells)
+			if targetChildID != "" {
+				if err := m.reassignPlayer(player.ID, cellID, targetChildID); err == nil {
+					redistributedPlayers++
+					if m.metrics != nil {
+						m.metrics.RecordSessionReassignment()
+					}
+				} else {
+					redistributionErrors++
+					if m.metrics != nil {
+						m.metrics.RecordSessionLoss()
+					}
+				}
+			} else {
+				redistributionErrors++
+				if m.metrics != nil {
+					m.metrics.RecordSessionLoss()
+				}
+			}
+		}
+	}
+
+	redistributionDuration := time.Since(redistributionStart)
+	if m.metrics != nil {
+		m.metrics.RecordSessionRedistributionTime(redistributionDuration)
 	}
 
 	// Mark parent cell as terminated
@@ -511,10 +577,14 @@ func (m *DefaultCellManager) SplitCell(cellID CellID, splitThreshold float64) ([
 		Timestamp:   time.Now(),
 		Duration:    &splitDuration,
 		Metadata: map[string]interface{}{
-			"threshold":             splitThreshold,
-			"parent_player_count":   parentState.PlayerCount,
-			"redistributed_players": redistributedPlayers,
-			"child_count":           len(childCells),
+			"threshold":                   splitThreshold,
+			"parent_player_count":         initialPlayerCount,
+			"redistributed_players":       redistributedPlayers,
+			"redistribution_errors":       redistributionErrors,
+			"child_count":                 len(childCells),
+			"redistribution_duration_ms":  redistributionDuration.Milliseconds(),
+			"redistribution_success_rate": float64(redistributedPlayers) / float64(initialPlayerCount),
+			"redistribution_within_1s":    redistributionDuration.Seconds() <= 1.0,
 		},
 	}
 	m.events = append(m.events, event)
