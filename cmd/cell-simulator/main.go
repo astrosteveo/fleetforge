@@ -41,14 +41,14 @@ var (
 
 func main() {
 	var (
-		cellID      = flag.String("cell-id", "", "Unique identifier for this cell")
-		xMin        = flag.Float64("x-min", -500.0, "Minimum X coordinate for cell boundaries")
-		xMax        = flag.Float64("x-max", 500.0, "Maximum X coordinate for cell boundaries")
-		yMin        = flag.Float64("y-min", -500.0, "Minimum Y coordinate for cell boundaries")
-		yMax        = flag.Float64("y-max", 500.0, "Maximum Y coordinate for cell boundaries")
-		maxPlayers  = flag.Int("max-players", 100, "Maximum number of players this cell can handle")
-		healthPort  = flag.Int("health-port", 8081, "Port for health check endpoint")
-		metricsPort = flag.Int("metrics-port", 8080, "Port for metrics endpoint")
+		cellID      = flag.String("cell-id", getEnvString("CELL_ID", ""), "Unique identifier for this cell")
+		xMin        = flag.Float64("x-min", getEnvFloat64("BOUNDARIES_X_MIN", -500.0), "Minimum X coordinate for cell boundaries")
+		xMax        = flag.Float64("x-max", getEnvFloat64("BOUNDARIES_X_MAX", 500.0), "Maximum X coordinate for cell boundaries")
+		yMin        = flag.Float64("y-min", getEnvFloat64("BOUNDARIES_Y_MIN", -500.0), "Minimum Y coordinate for cell boundaries")
+		yMax        = flag.Float64("y-max", getEnvFloat64("BOUNDARIES_Y_MAX", 500.0), "Maximum Y coordinate for cell boundaries")
+		maxPlayers  = flag.Int("max-players", getEnvInt("MAX_PLAYERS", 100), "Maximum number of players this cell can handle")
+		healthPort  = flag.Int("health-port", getEnvInt("HEALTH_PORT", 8081), "Port for health check endpoint")
+		metricsPort = flag.Int("metrics-port", getEnvInt("METRICS_PORT", 8080), "Port for metrics endpoint")
 	)
 
 	opts := zap.Options{
@@ -228,4 +228,32 @@ func startMetricsServer(port int, cellSim *cell.CellSimulator, logger logr.Logge
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		logger.Error(err, "Metrics server failed")
 	}
+}
+
+// getEnvString gets a string from environment variable with fallback default
+func getEnvString(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
+// getEnvInt gets an integer from environment variable with fallback default
+func getEnvInt(key string, defaultValue int) int {
+	if value := os.Getenv(key); value != "" {
+		if parsed, err := strconv.Atoi(value); err == nil {
+			return parsed
+		}
+	}
+	return defaultValue
+}
+
+// getEnvFloat64 gets a float64 from environment variable with fallback default
+func getEnvFloat64(key string, defaultValue float64) float64 {
+	if value := os.Getenv(key); value != "" {
+		if parsed, err := strconv.ParseFloat(value, 64); err == nil {
+			return parsed
+		}
+	}
+	return defaultValue
 }
