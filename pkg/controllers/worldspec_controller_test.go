@@ -387,6 +387,217 @@ func TestWorldSpecController_Reconcile(t *testing.T) {
 	}
 }
 
+// Test the new validation functions
+func TestValidateCellPartitioning(t *testing.T) {
+	yMin := -1000.0
+	yMax := 1000.0
+
+	parentBounds := fleetforgev1.WorldBounds{
+		XMin: -1000.0,
+		XMax: 1000.0,
+		YMin: &yMin,
+		YMax: &yMax,
+	}
+
+	tests := []struct {
+		name        string
+		parent      fleetforgev1.WorldBounds
+		children    []fleetforgev1.WorldBounds
+		tolerance   float64
+		expectError bool
+	}{
+		{
+			name:   "Valid partitioning - 2 equal cells",
+			parent: parentBounds,
+			children: []fleetforgev1.WorldBounds{
+				{XMin: -1000.0, XMax: 0.0, YMin: &yMin, YMax: &yMax},
+				{XMin: 0.0, XMax: 1000.0, YMin: &yMin, YMax: &yMax},
+			},
+			tolerance:   1e-6,
+			expectError: false,
+		},
+		{
+			name:   "Valid partitioning - 4 equal cells",
+			parent: parentBounds,
+			children: []fleetforgev1.WorldBounds{
+				{XMin: -1000.0, XMax: -500.0, YMin: &yMin, YMax: &yMax},
+				{XMin: -500.0, XMax: 0.0, YMin: &yMin, YMax: &yMax},
+				{XMin: 0.0, XMax: 500.0, YMin: &yMin, YMax: &yMax},
+				{XMin: 500.0, XMax: 1000.0, YMin: &yMin, YMax: &yMax},
+			},
+			tolerance:   1e-6,
+			expectError: false,
+		},
+		{
+			name:   "Invalid - overlapping cells",
+			parent: parentBounds,
+			children: []fleetforgev1.WorldBounds{
+				{XMin: -1000.0, XMax: 100.0, YMin: &yMin, YMax: &yMax},
+				{XMin: 0.0, XMax: 1000.0, YMin: &yMin, YMax: &yMax},
+			},
+			tolerance:   1e-6,
+			expectError: true,
+		},
+		{
+			name:   "Invalid - gap between cells",
+			parent: parentBounds,
+			children: []fleetforgev1.WorldBounds{
+				{XMin: -1000.0, XMax: -100.0, YMin: &yMin, YMax: &yMax},
+				{XMin: 100.0, XMax: 1000.0, YMin: &yMin, YMax: &yMax},
+			},
+			tolerance:   1e-6,
+			expectError: true,
+		},
+		{
+			name:   "Invalid - child outside parent bounds",
+			parent: parentBounds,
+			children: []fleetforgev1.WorldBounds{
+				{XMin: -1000.0, XMax: 0.0, YMin: &yMin, YMax: &yMax},
+				{XMin: 0.0, XMax: 1200.0, YMin: &yMin, YMax: &yMax}, // Extends beyond parent
+			},
+			tolerance:   1e-6,
+			expectError: true,
+		},
+		{
+			name:        "Invalid - no children provided",
+			parent:      parentBounds,
+			children:    []fleetforgev1.WorldBounds{},
+			tolerance:   1e-6,
+			expectError: true,
+		},
+		{
+			name: "Invalid - parent has zero area",
+			parent: fleetforgev1.WorldBounds{
+				XMin: 0.0,
+				XMax: 0.0, // Zero width
+				YMin: &yMin,
+				YMax: &yMax,
+			},
+			children: []fleetforgev1.WorldBounds{
+				{XMin: 0.0, XMax: 0.0, YMin: &yMin, YMax: &yMax},
+			},
+			tolerance:   1e-6,
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateCellPartitioning(tt.parent, tt.children, tt.tolerance)
+			if tt.expectError {
+				if err == nil {
+					t.Error("Expected error but got nil")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Expected no error but got: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestBoundsOverlap(t *testing.T) {
+	yMin := -10.0
+	yMax := 10.0
+
+	tests := []struct {
+		name     string
+		bounds1  fleetforgev1.WorldBounds
+		bounds2  fleetforgev1.WorldBounds
+		expected bool
+	}{
+		{
+			name:     "No overlap - adjacent on X axis",
+			bounds1:  fleetforgev1.WorldBounds{XMin: 0, XMax: 5, YMin: &yMin, YMax: &yMax},
+			bounds2:  fleetforgev1.WorldBounds{XMin: 5, XMax: 10, YMin: &yMin, YMax: &yMax},
+			expected: false,
+		},
+		{
+			name:     "Overlap on X axis",
+			bounds1:  fleetforgev1.WorldBounds{XMin: 0, XMax: 6, YMin: &yMin, YMax: &yMax},
+			bounds2:  fleetforgev1.WorldBounds{XMin: 5, XMax: 10, YMin: &yMin, YMax: &yMax},
+			expected: true,
+		},
+		{
+			name:     "No overlap - separated on X axis",
+			bounds1:  fleetforgev1.WorldBounds{XMin: 0, XMax: 3, YMin: &yMin, YMax: &yMax},
+			bounds2:  fleetforgev1.WorldBounds{XMin: 5, XMax: 10, YMin: &yMin, YMax: &yMax},
+			expected: false,
+		},
+		{
+			name:     "1D bounds - overlapping",
+			bounds1:  fleetforgev1.WorldBounds{XMin: 0, XMax: 6},
+			bounds2:  fleetforgev1.WorldBounds{XMin: 3, XMax: 10},
+			expected: true,
+		},
+		{
+			name:     "1D bounds - adjacent",
+			bounds1:  fleetforgev1.WorldBounds{XMin: 0, XMax: 5},
+			bounds2:  fleetforgev1.WorldBounds{XMin: 5, XMax: 10},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := boundsOverlap(tt.bounds1, tt.bounds2)
+			if result != tt.expected {
+				t.Errorf("boundsOverlap() = %v, expected %v", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestCalculateCellBoundaries(t *testing.T) {
+	yMin := -500.0
+	yMax := 500.0
+
+	topology := fleetforgev1.WorldTopology{
+		InitialCells: 4,
+		WorldBoundaries: fleetforgev1.WorldBounds{
+			XMin: -1000.0,
+			XMax: 1000.0,
+			YMin: &yMin,
+			YMax: &yMax,
+		},
+	}
+
+	cells := calculateCellBoundaries(topology)
+
+	// Verify correct number of cells
+	if len(cells) != 4 {
+		t.Errorf("Expected 4 cells, got %d", len(cells))
+	}
+
+	// Verify cells cover the entire space and have correct dimensions
+	expectedCellWidth := 2000.0 / 4.0 // 500.0
+	for i, cell := range cells {
+		expectedXMin := -1000.0 + float64(i)*expectedCellWidth
+		expectedXMax := expectedXMin + expectedCellWidth
+
+		if cell.XMin != expectedXMin {
+			t.Errorf("Cell %d: expected XMin %f, got %f", i, expectedXMin, cell.XMin)
+		}
+		if cell.XMax != expectedXMax {
+			t.Errorf("Cell %d: expected XMax %f, got %f", i, expectedXMax, cell.XMax)
+		}
+		if cell.YMin == nil || *cell.YMin != yMin {
+			t.Errorf("Cell %d: expected YMin %f, got %v", i, yMin, cell.YMin)
+		}
+		if cell.YMax == nil || *cell.YMax != yMax {
+			t.Errorf("Cell %d: expected YMax %f, got %v", i, yMax, cell.YMax)
+		}
+	}
+
+	// Verify validation passes for calculated boundaries
+	tolerance := 1e-6
+	err := validateCellPartitioning(topology.WorldBoundaries, cells, tolerance)
+	if err != nil {
+		t.Errorf("Validation failed for calculated cell boundaries: %v", err)
+	}
+}
+
 // Helper function to check if a string contains a substring
 func contains(s, substring string) bool {
 	return len(s) >= len(substring) &&

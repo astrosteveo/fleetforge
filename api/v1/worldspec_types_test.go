@@ -165,3 +165,191 @@ func TestWorldSpecStatus_TotalPlayers(t *testing.T) {
 		t.Errorf("Expected 3 cells, got %d", len(status.Cells))
 	}
 }
+
+func TestWorldBounds_CalculateArea(t *testing.T) {
+	tests := []struct {
+		name     string
+		bounds   WorldBounds
+		expected float64
+	}{
+		{
+			name: "1D bounds - X only",
+			bounds: WorldBounds{
+				XMin: 0,
+				XMax: 10,
+			},
+			expected: 10, // 10 * 1 * 1
+		},
+		{
+			name: "2D bounds - X and Y",
+			bounds: WorldBounds{
+				XMin: 0,
+				XMax: 10,
+				YMin: floatPtr(-5),
+				YMax: floatPtr(5),
+			},
+			expected: 100, // 10 * 10 * 1
+		},
+		{
+			name: "3D bounds - X, Y, and Z",
+			bounds: WorldBounds{
+				XMin: 0,
+				XMax: 10,
+				YMin: floatPtr(-5),
+				YMax: floatPtr(5),
+				ZMin: floatPtr(2),
+				ZMax: floatPtr(4),
+			},
+			expected: 200, // 10 * 10 * 2
+		},
+		{
+			name: "Invalid bounds - XMin >= XMax",
+			bounds: WorldBounds{
+				XMin: 10,
+				XMax: 0,
+			},
+			expected: 0,
+		},
+		{
+			name: "Invalid bounds - YMin >= YMax",
+			bounds: WorldBounds{
+				XMin: 0,
+				XMax: 10,
+				YMin: floatPtr(5),
+				YMax: floatPtr(-5),
+			},
+			expected: 0,
+		},
+		{
+			name: "Invalid bounds - ZMin >= ZMax",
+			bounds: WorldBounds{
+				XMin: 0,
+				XMax: 10,
+				YMin: floatPtr(-5),
+				YMax: floatPtr(5),
+				ZMin: floatPtr(4),
+				ZMax: floatPtr(2),
+			},
+			expected: 0,
+		},
+		{
+			name: "Zero area - XMin == XMax",
+			bounds: WorldBounds{
+				XMin: 5,
+				XMax: 5,
+			},
+			expected: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.bounds.CalculateArea()
+			if result != tt.expected {
+				t.Errorf("CalculateArea() = %f, expected %f", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestWorldBounds_IsValidBounds(t *testing.T) {
+	tests := []struct {
+		name     string
+		bounds   WorldBounds
+		expected bool
+	}{
+		{
+			name: "Valid 1D bounds",
+			bounds: WorldBounds{
+				XMin: 0,
+				XMax: 10,
+			},
+			expected: true,
+		},
+		{
+			name: "Valid 2D bounds",
+			bounds: WorldBounds{
+				XMin: 0,
+				XMax: 10,
+				YMin: floatPtr(-5),
+				YMax: floatPtr(5),
+			},
+			expected: true,
+		},
+		{
+			name: "Valid 3D bounds",
+			bounds: WorldBounds{
+				XMin: 0,
+				XMax: 10,
+				YMin: floatPtr(-5),
+				YMax: floatPtr(5),
+				ZMin: floatPtr(2),
+				ZMax: floatPtr(4),
+			},
+			expected: true,
+		},
+		{
+			name: "Invalid - XMin >= XMax",
+			bounds: WorldBounds{
+				XMin: 10,
+				XMax: 0,
+			},
+			expected: false,
+		},
+		{
+			name: "Invalid - XMin == XMax",
+			bounds: WorldBounds{
+				XMin: 5,
+				XMax: 5,
+			},
+			expected: false,
+		},
+		{
+			name: "Invalid - YMin >= YMax",
+			bounds: WorldBounds{
+				XMin: 0,
+				XMax: 10,
+				YMin: floatPtr(5),
+				YMax: floatPtr(-5),
+			},
+			expected: false,
+		},
+		{
+			name: "Invalid - ZMin >= ZMax",
+			bounds: WorldBounds{
+				XMin: 0,
+				XMax: 10,
+				YMin: floatPtr(-5),
+				YMax: floatPtr(5),
+				ZMin: floatPtr(4),
+				ZMax: floatPtr(2),
+			},
+			expected: false,
+		},
+		{
+			name: "Mixed valid/nil dimensions",
+			bounds: WorldBounds{
+				XMin: 0,
+				XMax: 10,
+				YMin: floatPtr(-5),
+				YMax: floatPtr(5),
+				// Z dimensions are nil, which is valid
+			},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.bounds.IsValidBounds()
+			if result != tt.expected {
+				t.Errorf("IsValidBounds() = %v, expected %v", result, tt.expected)
+			}
+		})
+	}
+}
+
+// Helper function to create float64 pointer
+func floatPtr(f float64) *float64 {
+	return &f
+}
