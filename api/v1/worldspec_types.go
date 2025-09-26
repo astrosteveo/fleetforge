@@ -92,6 +92,8 @@ func (wb WorldBounds) IsValidBounds() bool {
 type WorldTopology struct {
 	// InitialCells is the number of cells to create at startup
 	// +kubebuilder:validation:Minimum=1
+	// The maximum of 1000 is set to prevent excessive resource usage and startup time,
+	// ensuring manageable load on the system and Kubernetes cluster during initialization.
 	// +kubebuilder:validation:Maximum=1000
 	InitialCells int32 `json:"initialCells"`
 	// MaxCellsPerCluster limits the number of cells per Kubernetes cluster
