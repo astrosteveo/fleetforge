@@ -457,6 +457,19 @@ func (m *DefaultCellManager) SplitCell(cellID CellID, splitThreshold float64) ([
 			return nil, fmt.Errorf("failed to create child cell %s: %w", childID, err)
 		}
 
+		// Set lineage information for child cells
+		childCell.state.ParentID = &cellID
+		childCell.state.Generation = parentState.Generation + 1
+		childCell.state.SiblingIDs = make([]CellID, 0, len(childBoundaries)-1)
+
+		// Add other children as siblings (we'll update this after all children are created)
+		for j := range childBoundaries {
+			if j != i {
+				otherChildID := CellID(fmt.Sprintf("%s-child-%d", cellID, j+1))
+				childCell.state.SiblingIDs = append(childCell.state.SiblingIDs, otherChildID)
+			}
+		}
+
 		// Configure child cell
 		childCell.SetSplitThreshold(m.defaultSplitThreshold)
 		childCell.SetOnSplitNeeded(m.handleSplitNeeded)
@@ -637,6 +650,429 @@ func (m *DefaultCellManager) GetEvents() []CellEvent {
 	eventsCopy := make([]CellEvent, len(m.events))
 	copy(eventsCopy, m.events)
 	return eventsCopy
+}
+
+// MergeCells merges two sibling cells into a single cell with manual override
+func (m *DefaultCellManager) MergeCells(cellID1, cellID2 CellID) (*Cell, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Get both cells
+	cell1, exists := m.cells[cellID1]
+	if !exists {
+		return nil, fmt.Errorf("cell %s not found", cellID1)
+	}
+
+	cell2, exists := m.cells[cellID2]
+	if !exists {
+		return nil, fmt.Errorf("cell %s not found", cellID2)
+	}
+
+	state1 := cell1.GetState()
+	state2 := cell2.GetState()
+
+	// Validate merge constraints
+	if err := m.validateMergePair(state1, state2); err != nil {
+		return nil, fmt.Errorf("merge validation failed: %w", err)
+	}
+
+	mergeStart := time.Now()
+
+	// Create merged cell boundaries
+	mergedBoundaries := m.mergeBoundaries(state1.Boundaries, state2.Boundaries)
+
+	// Create merged cell with new ID
+	mergedID := CellID(fmt.Sprintf("merged-%s-%s", cellID1, cellID2))
+	mergedSpec := CellSpec{
+		ID:         mergedID,
+		Boundaries: mergedBoundaries,
+		Capacity: CellCapacity{
+			// Combine capacities (could be configured differently)
+			MaxPlayers:  state1.Capacity.MaxPlayers + state2.Capacity.MaxPlayers,
+			CPULimit:    state1.Capacity.CPULimit, // Use first cell's limits
+			MemoryLimit: state1.Capacity.MemoryLimit,
+		},
+	}
+
+	mergedCell, err := NewCell(mergedSpec)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create merged cell: %w", err)
+	}
+
+	// Set lineage information for merged cell
+	mergedCell.state.ParentID = state1.ParentID // Same parent as siblings
+	mergedCell.state.Generation = state1.Generation
+	mergedCell.state.SiblingIDs = []CellID{} // Merged cell has no siblings initially
+
+	// Configure merged cell
+	mergedCell.SetSplitThreshold(m.defaultSplitThreshold)
+	mergedCell.SetOnSplitNeeded(m.handleSplitNeeded)
+
+	if err := mergedCell.Start(m.ctx); err != nil {
+		return nil, fmt.Errorf("failed to start merged cell: %w", err)
+	}
+
+	// Merge all players from both cells
+	mergedPlayers := 0
+	allPlayers := make([]*PlayerState, 0)
+
+	// Collect players from both cells
+	for _, player := range state1.Players {
+		allPlayers = append(allPlayers, player)
+	}
+	for _, player := range state2.Players {
+		allPlayers = append(allPlayers, player)
+	}
+
+	// Add all players to merged cell
+	for _, player := range allPlayers {
+		if err := mergedCell.AddPlayer(player); err == nil {
+			mergedPlayers++
+			// Update session tracking
+			if session, exists := m.sessions[player.ID]; exists {
+				session.CellID = mergedID
+			}
+		}
+	}
+
+	// Stop and remove the original cells
+	cell1.Stop()
+	cell2.Stop()
+	delete(m.cells, cellID1)
+	delete(m.cells, cellID2)
+
+	// Add merged cell to manager
+	m.cells[mergedID] = mergedCell
+
+	mergeDuration := time.Since(mergeStart)
+
+	// Record merge event with ManualOverride reason
+	event := CellEvent{
+		Type:      CellEventMerged,
+		CellID:    mergedID,
+		ParentID:  state1.ParentID,
+		Timestamp: time.Now(),
+		Duration:  &mergeDuration,
+		Metadata: map[string]interface{}{
+			"reason":           "ManualOverride",
+			"source_cells":     []CellID{cellID1, cellID2},
+			"merged_players":   mergedPlayers,
+			"total_capacity":   mergedSpec.Capacity.MaxPlayers,
+			"generation":       state1.Generation,
+			"adjacency_check":  true,
+			"lineage_verified": true,
+		},
+	}
+	m.events = append(m.events, event)
+
+	// Record termination events for source cells
+	for _, sourceID := range []CellID{cellID1, cellID2} {
+		terminationEvent := CellEvent{
+			Type:      CellEventTerminated,
+			CellID:    sourceID,
+			Timestamp: time.Now(),
+			Metadata: map[string]interface{}{
+				"reason":    "merged",
+				"merged_to": mergedID,
+			},
+		}
+		m.events = append(m.events, terminationEvent)
+	}
+
+	return mergedCell, nil
+}
+
+// validateMergePair validates that two cells can be safely merged
+func (m *DefaultCellManager) validateMergePair(state1, state2 CellState) error {
+	// Check 1: Both cells must have the same parent (sibling relationship)
+	if state1.ParentID == nil || state2.ParentID == nil {
+		return fmt.Errorf("both cells must have parent IDs (be split cells)")
+	}
+
+	if *state1.ParentID != *state2.ParentID {
+		return fmt.Errorf("cells must be siblings (same parent): cell1 parent=%s, cell2 parent=%s",
+			*state1.ParentID, *state2.ParentID)
+	}
+
+	// Check 2: Same generation level
+	if state1.Generation != state2.Generation {
+		return fmt.Errorf("cells must be same generation: cell1=%d, cell2=%d",
+			state1.Generation, state2.Generation)
+	}
+
+	// Check 3: Adjacency check - cells must be spatially adjacent
+	if !m.areCellsAdjacent(state1.Boundaries, state2.Boundaries) {
+		return fmt.Errorf("cells are not adjacent and cannot be safely merged")
+	}
+
+	// Check 4: Combined capacity should not exceed reasonable limits
+	combinedPlayers := state1.PlayerCount + state2.PlayerCount
+	combinedCapacity := state1.Capacity.MaxPlayers + state2.Capacity.MaxPlayers
+
+	if combinedPlayers > combinedCapacity {
+		return fmt.Errorf("combined player count (%d) would exceed combined capacity (%d)",
+			combinedPlayers, combinedCapacity)
+	}
+
+	// Check 5: Both cells must be in a valid state for merging
+	if state1.Phase != "Running" || state2.Phase != "Running" {
+		return fmt.Errorf("both cells must be in Running phase: cell1=%s, cell2=%s",
+			state1.Phase, state2.Phase)
+	}
+
+	return nil
+}
+
+// areCellsAdjacent checks if two cell boundaries are spatially adjacent
+func (m *DefaultCellManager) areCellsAdjacent(bounds1, bounds2 v1.WorldBounds) bool {
+	// Check if cells share a boundary edge
+	// For simplicity, we'll check if they share either X or Y boundaries
+
+	// Check X-axis adjacency (cells side by side)
+	if bounds1.XMax == bounds2.XMin || bounds1.XMin == bounds2.XMax {
+		// Check Y overlap
+		if m.boundsOverlap(bounds1.YMin, bounds1.YMax, bounds2.YMin, bounds2.YMax) {
+			return true
+		}
+	}
+
+	// Check Y-axis adjacency (cells above/below each other)
+	if bounds1.YMin != nil && bounds1.YMax != nil && bounds2.YMin != nil && bounds2.YMax != nil {
+		if *bounds1.YMax == *bounds2.YMin || *bounds1.YMin == *bounds2.YMax {
+			// Check X overlap
+			if bounds1.XMin <= bounds2.XMax && bounds1.XMax >= bounds2.XMin {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// boundsOverlap checks if two boundary ranges overlap
+func (m *DefaultCellManager) boundsOverlap(min1, max1, min2, max2 *float64) bool {
+	if min1 == nil || max1 == nil || min2 == nil || max2 == nil {
+		return true // If no Y bounds specified, consider them overlapping
+	}
+	return *min1 <= *max2 && *max1 >= *min2
+}
+
+// mergeBoundaries creates a merged boundary that encompasses both input boundaries
+func (m *DefaultCellManager) mergeBoundaries(bounds1, bounds2 v1.WorldBounds) v1.WorldBounds {
+	merged := v1.WorldBounds{
+		XMin: bounds1.XMin,
+		XMax: bounds1.XMax,
+	}
+
+	// Expand to encompass both boundaries
+	if bounds2.XMin < merged.XMin {
+		merged.XMin = bounds2.XMin
+	}
+	if bounds2.XMax > merged.XMax {
+		merged.XMax = bounds2.XMax
+	}
+
+	// Handle Y boundaries
+	if bounds1.YMin != nil && bounds2.YMin != nil {
+		minY := *bounds1.YMin
+		if *bounds2.YMin < minY {
+			minY = *bounds2.YMin
+		}
+		merged.YMin = &minY
+	} else if bounds1.YMin != nil {
+		merged.YMin = bounds1.YMin
+	} else if bounds2.YMin != nil {
+		merged.YMin = bounds2.YMin
+	}
+
+	if bounds1.YMax != nil && bounds2.YMax != nil {
+		maxY := *bounds1.YMax
+		if *bounds2.YMax > maxY {
+			maxY = *bounds2.YMax
+		}
+		merged.YMax = &maxY
+	} else if bounds1.YMax != nil {
+		merged.YMax = bounds1.YMax
+	} else if bounds2.YMax != nil {
+		merged.YMax = bounds2.YMax
+	}
+
+	// Handle Z boundaries (if 3D)
+	if bounds1.ZMin != nil && bounds2.ZMin != nil {
+		minZ := *bounds1.ZMin
+		if *bounds2.ZMin < minZ {
+			minZ = *bounds2.ZMin
+		}
+		merged.ZMin = &minZ
+	} else if bounds1.ZMin != nil {
+		merged.ZMin = bounds1.ZMin
+	} else if bounds2.ZMin != nil {
+		merged.ZMin = bounds2.ZMin
+	}
+
+	if bounds1.ZMax != nil && bounds2.ZMax != nil {
+		maxZ := *bounds1.ZMax
+		if *bounds2.ZMax > maxZ {
+			maxZ = *bounds2.ZMax
+		}
+		merged.ZMax = &maxZ
+	} else if bounds1.ZMax != nil {
+		merged.ZMax = bounds1.ZMax
+	} else if bounds2.ZMax != nil {
+		merged.ZMax = bounds2.ZMax
+	}
+
+	return merged
+}
+
+// ProcessMergeAnnotation processes a manual merge request annotation
+func (m *DefaultCellManager) ProcessMergeAnnotation(annotation MergeAnnotation) (*Cell, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Validate annotation
+	if annotation.SourceCellID == "" || annotation.TargetCellID == "" {
+		return nil, fmt.Errorf("annotation validation failed: both sourceCellId and targetCellId must be specified")
+	}
+
+	if annotation.SourceCellID == annotation.TargetCellID {
+		return nil, fmt.Errorf("annotation validation failed: cannot merge cell with itself")
+	}
+
+	// Check if cells exist
+	sourceCell, exists := m.cells[annotation.SourceCellID]
+	if !exists {
+		return nil, fmt.Errorf("annotation validation failed: source cell %s not found", annotation.SourceCellID)
+	}
+
+	targetCell, exists := m.cells[annotation.TargetCellID]
+	if !exists {
+		return nil, fmt.Errorf("annotation validation failed: target cell %s not found", annotation.TargetCellID)
+	}
+
+	sourceState := sourceCell.GetState()
+	targetState := targetCell.GetState()
+
+	// Enhanced validation for annotation-based merges
+	if !annotation.ForceUnsafe {
+		if err := m.validateMergePair(sourceState, targetState); err != nil {
+			return nil, fmt.Errorf("annotation merge validation failed: %w", err)
+		}
+	} else {
+		// Even with ForceUnsafe, we still check some basic safety constraints
+		if sourceState.Phase != "Running" || targetState.Phase != "Running" {
+			return nil, fmt.Errorf("unsafe merge rejected: both cells must be in Running phase even with ForceUnsafe")
+		}
+	}
+
+	mergeStart := time.Now()
+
+	// Create merged cell boundaries
+	mergedBoundaries := m.mergeBoundaries(sourceState.Boundaries, targetState.Boundaries)
+
+	// Create merged cell with annotation-based ID
+	mergedID := CellID(fmt.Sprintf("annotated-merge-%s-%s", annotation.SourceCellID, annotation.TargetCellID))
+	mergedSpec := CellSpec{
+		ID:         mergedID,
+		Boundaries: mergedBoundaries,
+		Capacity: CellCapacity{
+			MaxPlayers:  sourceState.Capacity.MaxPlayers + targetState.Capacity.MaxPlayers,
+			CPULimit:    sourceState.Capacity.CPULimit,
+			MemoryLimit: sourceState.Capacity.MemoryLimit,
+		},
+	}
+
+	mergedCell, err := NewCell(mergedSpec)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create annotated merged cell: %w", err)
+	}
+
+	// Set lineage information
+	if sourceState.ParentID != nil {
+		mergedCell.state.ParentID = sourceState.ParentID
+		mergedCell.state.Generation = sourceState.Generation
+	} else if targetState.ParentID != nil {
+		mergedCell.state.ParentID = targetState.ParentID
+		mergedCell.state.Generation = targetState.Generation
+	}
+
+	// Configure merged cell
+	mergedCell.SetSplitThreshold(m.defaultSplitThreshold)
+	mergedCell.SetOnSplitNeeded(m.handleSplitNeeded)
+
+	if err := mergedCell.Start(m.ctx); err != nil {
+		return nil, fmt.Errorf("failed to start annotated merged cell: %w", err)
+	}
+
+	// Merge all players from both cells
+	mergedPlayers := 0
+	allPlayers := make([]*PlayerState, 0)
+
+	for _, player := range sourceState.Players {
+		allPlayers = append(allPlayers, player)
+	}
+	for _, player := range targetState.Players {
+		allPlayers = append(allPlayers, player)
+	}
+
+	// Add all players to merged cell
+	for _, player := range allPlayers {
+		if err := mergedCell.AddPlayer(player); err == nil {
+			mergedPlayers++
+			// Update session tracking
+			if session, exists := m.sessions[player.ID]; exists {
+				session.CellID = mergedID
+			}
+		}
+	}
+
+	// Stop and remove the original cells
+	sourceCell.Stop()
+	targetCell.Stop()
+	delete(m.cells, annotation.SourceCellID)
+	delete(m.cells, annotation.TargetCellID)
+
+	// Add merged cell to manager
+	m.cells[mergedID] = mergedCell
+
+	mergeDuration := time.Since(mergeStart)
+
+	// Record annotation-based merge event
+	event := CellEvent{
+		Type:      CellEventMerged,
+		CellID:    mergedID,
+		ParentID:  mergedCell.state.ParentID,
+		Timestamp: time.Now(),
+		Duration:  &mergeDuration,
+		Metadata: map[string]interface{}{
+			"reason":            "ManualOverride",
+			"trigger":           "annotation",
+			"source_cells":      []CellID{annotation.SourceCellID, annotation.TargetCellID},
+			"merged_players":    mergedPlayers,
+			"total_capacity":    mergedSpec.Capacity.MaxPlayers,
+			"requested_by":      annotation.RequestedBy,
+			"annotation_reason": annotation.Reason,
+			"force_unsafe":      annotation.ForceUnsafe,
+		},
+	}
+	m.events = append(m.events, event)
+
+	// Record termination events for source cells
+	for _, sourceID := range []CellID{annotation.SourceCellID, annotation.TargetCellID} {
+		terminationEvent := CellEvent{
+			Type:      CellEventTerminated,
+			CellID:    sourceID,
+			Timestamp: time.Now(),
+			Metadata: map[string]interface{}{
+				"reason":       "annotation-merge",
+				"merged_to":    mergedID,
+				"requested_by": annotation.RequestedBy,
+			},
+		}
+		m.events = append(m.events, terminationEvent)
+	}
+
+	return mergedCell, nil
 }
 
 // GetEventsSince returns events recorded since the specified time
