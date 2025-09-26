@@ -116,8 +116,13 @@ func (r *WorldSpecReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
-	// Requeue for status updates and annotation monitoring (5 second interval for manual splits)
-	return ctrl.Result{RequeueAfter: time.Second * 5}, nil
+	// Requeue for status updates and annotation monitoring
+	if _, hasAnnotation := worldSpec.Annotations[ForceSplitAnnotation]; hasAnnotation {
+		// Aggressive polling if manual split annotation is present
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	}
+	// Default (less aggressive) polling interval
+	return ctrl.Result{RequeueAfter: 1 * time.Minute}, nil
 }
 
 // reconcileCells manages the lifecycle of cell pods
