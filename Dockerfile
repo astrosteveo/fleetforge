@@ -20,7 +20,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o fleetforge ./cmd/cell
 
 # Stage 2: Production stage
-FROM alpine:3.18 AS production
+FROM alpine:3.22 AS production
 
 # Install runtime dependencies
 RUN apk --no-cache add ca-certificates tzdata
