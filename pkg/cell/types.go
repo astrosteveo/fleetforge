@@ -115,7 +115,6 @@ type CellManager interface {
 
 	// Scaling operations
 	SplitCell(cellID CellID, splitThreshold float64) ([]*Cell, error)
-	MergeCells(cellID1, cellID2 CellID) (*Cell, error)
 
 	// Event handling
 	GetEvents() []CellEvent
@@ -187,10 +186,4 @@ type CellMetrics struct {
 	LastSplitTime       time.Time `json:"lastSplitTime"`       // When cell was last split
 	SplitCount          int       `json:"splitCount"`          // Number of times this cell has split
 	AvgSplitDuration    float64   `json:"avgSplitDuration"`    // Average split duration in milliseconds
-
-	// Merge metrics
-	LastMergeTime    time.Time `json:"lastMergeTime"`    // When cell was last merged
-	MergeCount       int       `json:"mergeCount"`       // Number of times this cell has been merged
-	AvgMergeDuration float64   `json:"avgMergeDuration"` // Average merge duration in milliseconds
-	LowLoadStartTime time.Time `json:"lowLoadStartTime"` // When sustained low load period started
 }
