@@ -823,7 +823,7 @@ func TestCellSplitAcceptanceCriteria(t *testing.T) {
 		player := &PlayerState{
 			ID: PlayerID(fmt.Sprintf("test-player-%d", i)),
 			Position: WorldPosition{
-				X: float64(i * 10),
+				X: float64(i * 200), // Spread across X=200,400,600,800,1000 to distribute between children
 				Y: 50,
 			},
 			LastSeen:  time.Now(),
