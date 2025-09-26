@@ -584,7 +584,7 @@ func (m *DefaultCellManager) splitCellInternal(cellID CellID, splitThreshold flo
 	// Record split event with enhanced metadata
 	eventMetadata := map[string]interface{}{
 		"threshold":             splitThreshold,
-		"parent_player_count":   parentState.PlayerCount,
+		"parent_player_count":   initialPlayerCount,
 		"redistributed_players": redistributedPlayers,
 		"child_count":           len(childCells),
 		"reason":                reason,
