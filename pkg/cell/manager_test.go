@@ -1079,10 +1079,7 @@ func TestCellSplitCooldown(t *testing.T) {
 
 // TestCellManager_ManualSplitCell tests the manual split override functionality
 func TestCellManager_ManualSplitCell(t *testing.T) {
-	cooldownDuration := 2 * time.Second
 	manager := NewCellManager()
-	dmgr := manager.(*DefaultCellManager)
-	var cooldownBlocksIncremented bool
 
 	// Create a test cell
 	spec := CellSpec{
