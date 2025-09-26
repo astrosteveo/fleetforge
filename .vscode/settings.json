@@ -7,5 +7,14 @@
   },
   "chat.instructionsFilesLocations": {
     ".github/instructions": true
+  },
+  "yaml.schemas": {
+    "https://squidfunk.github.io/mkdocs-material/schema.json": [
+      "mkdocs.yml",
+      "file:///home/astrosteveo/Repos/fleetforge/mkdocs.yml"
+    ],
+    "https://www.schemastore.org/mkdocs-1.6.json": [
+      "file:///home/astrosteveo/Repos/fleetforge/docs/mkdocs.yml"
+    ]
   }
 }

@@ -1,0 +1,14 @@
+# FleetForge documentation toolchain (pinned for reproducibility)
+
+# Core MkDocs stack
+mkdocs==1.6.1
+mkdocs-material==9.6.20
+pymdown-extensions==10.8.1
+
+# Plugins
+mkdocs-git-revision-date-localized-plugin==1.2.2
+mkdocs-git-authors-plugin==0.7.3
+mkdocs-mermaid2-plugin==1.1.1
+mkdocs-exclude==1.0.2
+mkdocs-redirects==1.2.1
+mkdocs-minify-plugin==0.8.0

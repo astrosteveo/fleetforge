@@ -1,0 +1,137 @@
+site_name: FleetForge Documentation
+site_url: https://astrosteveo.github.io/fleetforge
+site_description: Elastic Kubernetes Cell Management Platform
+repo_url: https://github.com/astrosteveo/fleetforge
+repo_name: astrosteveo/fleetforge
+edit_uri: edit/main/docs/
+docs_dir: docs
+
+theme:
+  name: material
+  icon:
+    logo: material/cube-outline
+  palette:
+  # Palette toggle for light mode
+  - media: "(prefers-color-scheme: light)"
+    scheme: default
+    primary: blue
+    accent: blue
+    toggle:
+      icon: material/brightness-7
+      name: Switch to dark mode
+  # Palette toggle for dark mode
+  - media: "(prefers-color-scheme: dark)"
+    scheme: slate
+    primary: blue
+    accent: blue
+    toggle:
+      icon: material/brightness-4
+      name: Switch to light mode
+  features:
+  - navigation.tabs
+  - navigation.sections
+  - navigation.expand
+  - navigation.path
+  - navigation.top
+  - navigation.instant
+  - search.highlight
+  - search.share
+  - toc.follow
+  - content.action.edit
+  - content.code.copy
+  - content.code.annotate
+  - content.tooltips
+
+plugins:
+- search
+- git-revision-date-localized:
+    enable_creation_date: true
+    fallback_to_build_date: true
+- git-authors:
+    enabled: true
+- exclude:
+    glob:
+    - README.md
+    - README-MKDOCS.md
+- minify:
+    minify_html: true
+    minify_js: true
+    minify_css: true
+- redirects:
+    redirect_maps:
+      README.md: contributing/documentation-overview.md
+      README-MKDOCS.md: contributing/docs-site-playbook.md
+
+markdown_extensions:
+- pymdownx.highlight:
+    anchor_linenums: true
+    line_spans: __span
+    pygments_lang_class: true
+- pymdownx.inlinehilite
+- pymdownx.snippets
+- pymdownx.superfences:
+    custom_fences:
+    - name: mermaid
+      class: mermaid
+      format: !!python/name:pymdownx.superfences.fence_code_format ""
+- pymdownx.tabbed:
+    alternate_style: true
+- admonition
+- pymdownx.details
+- attr_list
+- md_in_html
+- tables
+- footnotes
+- pymdownx.critic
+- pymdownx.caret
+- pymdownx.keys
+- pymdownx.mark
+- pymdownx.tilde
+- pymdownx.emoji:
+    emoji_index: !!python/name:material.extensions.emoji.twemoji ""
+    emoji_generator:
+
+      !!python/name:material.extensions.emoji.to_svg ""
+nav:
+- Home: index.md
+- Getting Started:
+  - Quick Start: getting-started/quick-start.md
+  - Installation Guide: getting-started/installation.md
+  - Development Environment: getting-started/development.md
+- Platform:
+  - Architecture Overview: architecture/design.md
+  - Production Readiness Design: architecture/production-readiness-design.md
+  - API Reference: api-reference/index.md
+- Product & Planning:
+  - Product Requirements: product/prd.md
+  - System Requirements: product/requirements.md
+  - Implementation Tasks: product/tasks.md
+  - Production Readiness Plan: product/production-readiness-plan.md
+  - Readiness Review Workflow: product/production-readiness-review-process.md
+  - Readiness Taskboard: product/production-readiness-tasks.md
+- Operations:
+  - Operations Overview: ops/index.md
+  - Elasticity Demo Runbook: ops/runbook-elasticity-demo.md
+  - Monitoring and Observability: ops/monitoring.md
+  - Observability Dashboards: ops/dashboards.md
+  - Alerting and Escalations: ops/alerts.md
+- Research Library:
+  - Research Overview: research/index.md
+  - Elastic Fabric Paper Notes: research/cell-mesh-elastic-fabric-paper.md
+  - World Partitioning Paper Notes: research/world-partitioning-academic-paper.md
+- Architecture Decisions:
+  - ADR Overview: adr/index.md
+  - ADR-0001 • Initial MVP Scope: adr/ADR-0001-initial-mvp-scope.md
+- Contributing:
+  - Documentation Overview: contributing/documentation-overview.md
+  - Docs Site Playbook: contributing/docs-site-playbook.md
+
+extra:
+  social:
+  - icon: fontawesome/brands/github
+    link: https://github.com/astrosteveo/fleetforge
+  version:
+    provider: mike
+
+extra_css:
+- stylesheets/extra.css

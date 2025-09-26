@@ -3,9 +3,13 @@
 ## 1. Document Information
 
 - **Project**: FleetForge
+
 - **Version**: 1.0
+
 - **Date**: September 24, 2025
+
 - **Status**: Draft
+
 - **Related**: requirements.md, design.md
 
 ## 2. Implementation Strategy
@@ -18,6 +22,7 @@ This implementation plan follows the Spec Driven Workflow v1, breaking down the 
 2. **Phase 2: Multi-Cluster** - Cross-cluster orchestration and service mesh
 3. **Phase 3: Intelligence** - Predictive scaling and migration algorithms  
 4. **Phase 4: Production** - Monitoring, security, and operational features
+5. **Continuous: Documentation Platform** - Automation, governance, and accessibility for the docs site
 
 ## 3. Phase 1: Foundation (Weeks 1-4)
 
@@ -31,17 +36,27 @@ This implementation plan follows the Spec Driven Workflow v1, breaking down the 
 **Description**: Set up the foundational project structure, development environment, and CI/CD pipeline for the FleetForge project.
 
 **Acceptance Criteria**:
+
 - [ ] Git repository with proper structure and branching strategy
+
 - [ ] Go modules initialized with appropriate project structure
+
 - [ ] Kubernetes development cluster (kind/minikube) configured
+
 - [ ] Basic CI/CD pipeline with linting, testing, and building
+
 - [ ] Documentation templates and contribution guidelines
+
 - [ ] Docker registry and container image workflow
 
 **Deliverables**:
+
 - Repository structure with `/cmd`, `/pkg`, `/api`, `/config`, `/deploy` directories
+
 - Makefile with common development commands
+
 - GitHub Actions or equivalent CI/CD workflow
+
 - Development environment setup documentation
 
 ### Task 1.2: WorldSpec Custom Resource Definition
@@ -54,16 +69,25 @@ This implementation plan follows the Spec Driven Workflow v1, breaking down the 
 **Description**: Implement the WorldSpec Custom Resource Definition (CRD) that serves as the declarative API for world configuration.
 
 **Acceptance Criteria**:
+
 - [ ] WorldSpec CRD schema with topology, capacity, scaling, and persistence fields
+
 - [ ] CRD validation with appropriate constraints and defaults
+
 - [ ] Generated client code for WorldSpec resources
+
 - [ ] Unit tests covering CRD validation and serialization
+
 - [ ] Example WorldSpec manifests for different scenarios
 
 **Deliverables**:
+
 - `api/v1/worldspec_types.go` with complete schema
+
 - CRD manifests in `/config/crd`
+
 - Generated clientset and informers
+
 - Unit tests achieving >90% coverage
 
 ### Task 1.3: Basic Cell Pod Implementation
@@ -76,18 +100,29 @@ This implementation plan follows the Spec Driven Workflow v1, breaking down the 
 **Description**: Implement the basic cell pod that hosts game simulation for a specific spatial region with fundamental state management.
 
 **Acceptance Criteria**:
+
 - [ ] Cell pod with configurable spatial boundaries
+
 - [ ] Basic player state management and persistence
+
 - [ ] Simple AOI filtering mechanism
+
 - [ ] Health checks and readiness probes
+
 - [ ] Metrics exposition for monitoring
+
 - [ ] Graceful shutdown handling
 
 **Deliverables**:
+
 - `pkg/cell` package with core cell logic
+
 - Container image with cell simulation runtime
+
 - Kubernetes deployment manifests
+
 - Integration tests for cell lifecycle
+
 - Prometheus metrics endpoint
 
 ### Task 1.4: WorldSpec Controller
@@ -100,17 +135,27 @@ This implementation plan follows the Spec Driven Workflow v1, breaking down the 
 **Description**: Implement the Kubernetes controller that reconciles WorldSpec resources and manages cell pod lifecycles.
 
 **Acceptance Criteria**:
+
 - [ ] Controller-runtime based reconciliation loop
+
 - [ ] Cell pod creation and deletion based on WorldSpec
+
 - [ ] Status updates on WorldSpec resources
+
 - [ ] Event logging for operational visibility
+
 - [ ] Error handling and retry mechanisms
+
 - [ ] Leader election for high availability
 
 **Deliverables**:
+
 - `pkg/controllers/worldspec_controller.go`
+
 - Controller deployment manifests with RBAC
+
 - Unit and integration tests
+
 - Controller manager binary and container image
 
 ### Task 1.5: Basic Gateway Service
@@ -123,16 +168,25 @@ This implementation plan follows the Spec Driven Workflow v1, breaking down the 
 **Description**: Implement a basic gateway service for player session routing and admission control.
 
 **Acceptance Criteria**:
+
 - [ ] HTTP/WebSocket server for client connections
+
 - [ ] Basic session management with player authentication
+
 - [ ] Simple cell selection algorithm (round-robin initially)
+
 - [ ] Session affinity and connection persistence
+
 - [ ] Basic rate limiting and admission control
 
 **Deliverables**:
+
 - `pkg/gateway` package with routing logic
+
 - Gateway service deployment manifests
+
 - Client connection examples and documentation
+
 - Load testing scripts and results
 
 ## 4. Phase 2: Multi-Cluster (Weeks 5-8)
@@ -147,16 +201,25 @@ This implementation plan follows the Spec Driven Workflow v1, breaking down the 
 **Description**: Integrate with Cilium Cluster Mesh for cross-cluster service discovery and networking.
 
 **Acceptance Criteria**:
+
 - [ ] Cilium Cluster Mesh deployed across test clusters
+
 - [ ] Cross-cluster service discovery for cell pods
+
 - [ ] mTLS encryption for inter-cluster communication
+
 - [ ] Network policies for security isolation
+
 - [ ] Cross-cluster connectivity testing and validation
 
 **Deliverables**:
+
 - Cilium configuration manifests
+
 - Multi-cluster deployment documentation
+
 - Network security policies
+
 - Cross-cluster connectivity test suite
 
 ### Task 2.2: Cross-Cluster Cell Discovery
@@ -169,16 +232,25 @@ This implementation plan follows the Spec Driven Workflow v1, breaking down the 
 **Description**: Implement cross-cluster cell discovery and registration mechanisms.
 
 **Acceptance Criteria**:
+
 - [ ] Cell registration with cluster-wide service registry
+
 - [ ] Health monitoring across cluster boundaries
+
 - [ ] Automatic deregistration of failed cells
+
 - [ ] Cross-cluster load balancing support
+
 - [ ] Metrics for cross-cluster connectivity
 
 **Deliverables**:
+
 - `pkg/discovery` package for service registration
+
 - Cross-cluster health check implementation
+
 - Service registry integration tests
+
 - Observability dashboards for service discovery
 
 ### Task 2.3: Placement Optimizer
@@ -191,16 +263,25 @@ This implementation plan follows the Spec Driven Workflow v1, breaking down the 
 **Description**: Implement intelligent cell placement optimization considering network latency and resource availability.
 
 **Acceptance Criteria**:
+
 - [ ] Topology-aware placement algorithm
+
 - [ ] Network latency measurement and consideration
+
 - [ ] Resource availability assessment
+
 - [ ] Anti-affinity constraints for fault tolerance
+
 - [ ] Placement decision logging and metrics
 
 **Deliverables**:
+
 - `pkg/placement` package with optimization algorithms
+
 - Network latency measurement utilities
+
 - Placement decision audit trail
+
 - Performance benchmarks and analysis
 
 ### Task 2.4: Basic Spillover Mechanism
@@ -213,16 +294,25 @@ This implementation plan follows the Spec Driven Workflow v1, breaking down the 
 **Description**: Implement cross-cluster spillover for handling capacity overflow.
 
 **Acceptance Criteria**:
+
 - [ ] Consistent hashing for overflow cell selection
+
 - [ ] Spillover trigger based on capacity thresholds
+
 - [ ] Session routing to overflow cells
+
 - [ ] Drain-back mechanism when capacity recovers
+
 - [ ] Spillover metrics and monitoring
 
 **Deliverables**:
+
 - `pkg/spillover` package with consistent hashing
+
 - Spillover policy configuration
+
 - Cross-cluster routing updates
+
 - Capacity monitoring and alerting
 
 ## 5. Phase 3: Intelligence (Weeks 9-12)
@@ -237,16 +327,25 @@ This implementation plan follows the Spec Driven Workflow v1, breaking down the 
 **Description**: Implement predictive autoscaling using machine learning models to forecast capacity requirements.
 
 **Acceptance Criteria**:
+
 - [ ] Telemetry collection for player behavior patterns
+
 - [ ] Basic ML model for capacity prediction
+
 - [ ] Proactive scaling trigger mechanisms
+
 - [ ] Model training and validation pipeline
+
 - [ ] Scaling decision audit and metrics
 
 **Deliverables**:
+
 - `pkg/autoscaler` package with prediction logic
+
 - ML model training infrastructure
+
 - Telemetry collection and storage
+
 - Prediction accuracy metrics and validation
 
 ### Task 3.2: Cell Migration Protocol
@@ -259,16 +358,25 @@ This implementation plan follows the Spec Driven Workflow v1, breaking down the 
 **Description**: Implement live cell migration with snapshot-plus-write-ahead-log approach for zero-downtime operations.
 
 **Acceptance Criteria**:
+
 - [ ] State snapshot mechanism with incremental updates
+
 - [ ] Write-ahead logging for consistency during migration
+
 - [ ] Dual authority phase with coordinated handoff
+
 - [ ] Migration rollback on failure
+
 - [ ] Player experience impact minimization (<100ms)
 
 **Deliverables**:
+
 - `pkg/migration` package with migration protocol
+
 - State serialization and deserialization
+
 - Migration coordination logic
+
 - Migration success rate validation tests
 
 ### Task 3.3: Advanced Interest Management
@@ -281,16 +389,25 @@ This implementation plan follows the Spec Driven Workflow v1, breaking down the 
 **Description**: Implement sophisticated area-of-interest management with spatial indexing and adaptive filtering.
 
 **Acceptance Criteria**:
+
 - [ ] R-tree spatial indexing for efficient proximity queries
+
 - [ ] Multi-level AOI filtering (gateway, cell, entity)
+
 - [ ] Delta compression for state updates
+
 - [ ] Adaptive update rates based on activity
+
 - [ ] Cross-cell boundary optimization
 
 **Deliverables**:
+
 - `pkg/aoi` package with spatial algorithms
+
 - Adaptive filtering mechanisms
+
 - Cross-boundary synchronization
+
 - AOI performance benchmarks
 
 ### Task 3.4: Overload Handling
@@ -303,16 +420,25 @@ This implementation plan follows the Spec Driven Workflow v1, breaking down the 
 **Description**: Implement progressive overload handling mechanisms including AOI reduction and time dilation.
 
 **Acceptance Criteria**:
+
 - [ ] Progressive AOI radius reduction under load
+
 - [ ] Dynamic simulation tick-rate adjustment
+
 - [ ] Time dilation implementation for extreme conditions
+
 - [ ] Admission control with queuing and wait time estimation
+
 - [ ] Graceful degradation metrics
 
 **Deliverables**:
+
 - `pkg/overload` package with degradation strategies
+
 - Load-based policy engine
+
 - Admission control mechanisms
+
 - Performance under stress validation
 
 ## 6. Phase 4: Production (Weeks 13-16)
@@ -327,16 +453,25 @@ This implementation plan follows the Spec Driven Workflow v1, breaking down the 
 **Description**: Implement comprehensive monitoring, alerting, and observability for production operations.
 
 **Acceptance Criteria**:
+
 - [ ] Prometheus metrics for all system components
+
 - [ ] Grafana dashboards for operational visibility
+
 - [ ] OpenTelemetry distributed tracing
+
 - [ ] Structured logging with correlation IDs
+
 - [ ] SLI/SLO definitions and monitoring
 
 **Deliverables**:
+
 - Complete monitoring stack deployment
+
 - Operational dashboards and alerting rules
+
 - Distributed tracing implementation
+
 - SRE runbooks and procedures
 
 ### Task 4.2: Security Hardening
@@ -349,16 +484,25 @@ This implementation plan follows the Spec Driven Workflow v1, breaking down the 
 **Description**: Implement comprehensive security measures for production deployment.
 
 **Acceptance Criteria**:
+
 - [ ] mTLS for all service-to-service communication
+
 - [ ] RBAC policies for least-privilege access
+
 - [ ] Network policies for micro-segmentation
+
 - [ ] Secrets management with external providers
+
 - [ ] Security scanning and vulnerability assessment
 
 **Deliverables**:
+
 - Security policy manifests
+
 - Identity and access management configuration
+
 - Vulnerability scanning automation
+
 - Security compliance documentation
 
 ### Task 4.3: Multi-Region Deployment
@@ -371,16 +515,25 @@ This implementation plan follows the Spec Driven Workflow v1, breaking down the 
 **Description**: Implement multi-region deployment capabilities with automated failover.
 
 **Acceptance Criteria**:
+
 - [ ] Multi-region cluster configuration
+
 - [ ] Cross-region state replication
+
 - [ ] Automated failover mechanisms
+
 - [ ] Data residency and compliance controls
+
 - [ ] Disaster recovery procedures
 
 **Deliverables**:
+
 - Multi-region deployment automation
+
 - Failover testing and validation
+
 - Disaster recovery runbooks
+
 - Compliance audit documentation
 
 ### Task 4.4: Performance Optimization
@@ -393,16 +546,25 @@ This implementation plan follows the Spec Driven Workflow v1, breaking down the 
 **Description**: Optimize system performance to meet target benchmarks and resource utilization goals.
 
 **Acceptance Criteria**:
+
 - [ ] Sub-500ms cell migration times achieved
+
 - [ ] 42% improvement in resource utilization validated
+
 - [ ] p99 latency under 150ms globally, 75ms regionally
+
 - [ ] Cost reduction of 40-70% demonstrated
+
 - [ ] Performance regression testing automated
 
 **Deliverables**:
+
 - Performance optimization implementation
+
 - Benchmark validation results
+
 - Cost analysis and optimization reports
+
 - Performance regression test suite
 
 ## 7. Cross-Cutting Tasks
@@ -417,16 +579,108 @@ This implementation plan follows the Spec Driven Workflow v1, breaking down the 
 **Description**: Maintain comprehensive documentation and create training materials.
 
 **Acceptance Criteria**:
+
 - [ ] API documentation with OpenAPI specs
+
 - [ ] Architecture decision records (ADRs)
+
 - [ ] Operator and user guides
+
 - [ ] Troubleshooting and debugging guides
+
 - [ ] Training materials and workshops
 
 **Deliverables**:
+
 - Complete documentation portal
+
 - Training curriculum and materials
+
 - Troubleshooting guides and FAQs
+
+## 8. Continuous Documentation Platform
+
+### Task D.1: Docs CI/CD Hardening
+
+**ID**: TASK-D01  
+**Priority**: High  
+**Estimated Effort**: 2 days initial + ongoing audits  
+**Dependencies**: Requirements REQ-065, REQ-066, REQ-067  
+
+**Description**: Implement and maintain a production-grade documentation pipeline that performs strict MkDocs builds, produces pull request artifacts, and deploys to GitHub Pages automatically on `main`.
+
+**Acceptance Criteria**:
+
+- [ ] GitHub Actions workflow caches dependencies, installs pinned toolchain, and runs `mkdocs build --clean --strict`
+
+- [ ] Pull request runs upload the generated `site/` directory as an artifact for reviewers
+
+- [ ] Pushes to `main` publish to GitHub Pages within five minutes using OIDC-authenticated deploy action
+
+- [ ] Workflow failures block merges until corrected and are visible via repository status checks
+
+**Deliverables**:
+
+- `.github/workflows/docs.yml` and `.github/workflows/docs-mkdocs.yml` reflecting hardening steps
+
+- Documentation playbook updates covering local reproduction and troubleshooting
+
+- Artifact retention policy configuration documented in ops runbook
+
+### Task D.2: Documentation Dependency Governance
+
+**ID**: TASK-D02  
+**Priority**: Medium  
+**Estimated Effort**: 1 day per quarter  
+**Dependencies**: Requirements REQ-068  
+
+**Description**: Maintain pinned versions for MkDocs tooling and review them quarterly for security and stability updates.
+
+**Acceptance Criteria**:
+
+- [ ] `requirements.txt` contains fully pinned versions for all MkDocs dependencies
+
+- [ ] Scheduled workflow or calendar reminder triggers quarterly dependency review
+
+- [ ] Security advisories (Dependabot, GitHub Advisory) are triaged within two weeks
+
+- [ ] Upgrade playbook documents verification steps and rollback plan
+
+**Deliverables**:
+
+- Updated `requirements.txt` with version pins and comments
+
+- Quarterly review log stored alongside documentation runbooks
+
+- Issue templates for tracking dependency upgrades
+
+### Task D.3: Accessibility Regression Guardrails
+
+**ID**: TASK-D03  
+**Priority**: Medium  
+**Estimated Effort**: 3 days initial + ongoing  
+**Dependencies**: Requirements REQ-069  
+
+**Description**: Enforce WCAG 2.2 AA accessibility expectations for the documentation site through automation and manual review gates.
+
+**Acceptance Criteria**:
+
+- [ ] Accessibility checklist integrated into pull request template for documentation changes
+
+- [ ] Automated axe-core or equivalent scanning step evaluated for integration and documented outcome
+
+- [ ] Strict MkDocs build configured to surface accessibility-related warnings as failures
+
+- [ ] Ops runbook updated with remediation workflow for accessibility issues
+
+**Deliverables**:
+
+- Updated contributing guidelines highlighting accessibility checklist
+
+- Optional GitHub Action or documented manual process for running accessibility scans
+
+- Runbook entry describing triage and remediation expectations
+
 - Video tutorials and demonstrations
 
 ### Task 7.2: Testing and Quality Assurance
@@ -439,16 +693,25 @@ This implementation plan follows the Spec Driven Workflow v1, breaking down the 
 **Description**: Implement comprehensive testing strategy covering unit, integration, and end-to-end scenarios.
 
 **Acceptance Criteria**:
+
 - [ ] Unit test coverage >90% for all packages
+
 - [ ] Integration tests for all major workflows
+
 - [ ] End-to-end tests for user scenarios
+
 - [ ] Performance and load testing
+
 - [ ] Chaos engineering and fault injection
 
 **Deliverables**:
+
 - Complete test suite with CI/CD integration
+
 - Performance testing framework
+
 - Chaos engineering test cases
+
 - Quality gates and automated validation
 
 ## 8. Risk Assessment and Mitigation
@@ -487,30 +750,42 @@ This implementation plan follows the Spec Driven Workflow v1, breaking down the 
 ### 9.1 Technical Metrics
 
 - Cell migration success rate: >99.9%
+
 - Migration completion time: <500ms
+
 - Cross-cluster communication latency: <25ms overhead
+
 - Resource utilization improvement: 42% vs. VM-based approaches
+
 - Cost reduction: 40-70% through elastic scaling
 
 ### 9.2 Operational Metrics
 
 - System availability: >99.99%
+
 - Mean time to recovery: <30 seconds
+
 - Deployment frequency: Multiple deployments per day
+
 - Change failure rate: <5%
+
 - Lead time for changes: <1 hour
 
 ### 9.3 Business Metrics
 
 - Concurrent player capacity: Millions without artificial boundaries
+
 - Player experience quality: <150ms p99 latency globally
+
 - Operational efficiency: 50% reduction in manual operations
+
 - Developer productivity: 3x faster feature delivery
+
 - Infrastructure cost optimization: 40-70% reduction
 
 ## 10. Timeline and Dependencies
 
-```
+```text
 Phase 1 (Weeks 1-4): Foundation
 ├── TASK-001: Project Setup (Week 1)
 ├── TASK-002: WorldSpec CRD (Week 1-2)
@@ -546,17 +821,25 @@ Cross-Cutting (Ongoing)
 ### 11.1 Development Team
 
 - **Lead Architect**: 1 FTE - Overall architecture and technical decisions
+
 - **Backend Engineers**: 2-3 FTE - Core implementation and integration
+
 - **DevOps Engineer**: 1 FTE - Infrastructure and deployment automation  
+
 - **QA Engineer**: 1 FTE - Testing strategy and quality assurance
+
 - **Technical Writer**: 0.5 FTE - Documentation and training materials
 
 ### 11.2 Infrastructure Requirements
 
 - **Development Clusters**: 3 multi-node Kubernetes clusters for testing
+
 - **CI/CD Infrastructure**: GitHub Actions or equivalent with sufficient compute
+
 - **Container Registry**: Private registry for storing container images
+
 - **Monitoring Stack**: Prometheus, Grafana, and log aggregation
+
 - **Cloud Resources**: Multi-region deployment for testing and validation
 
 ---
