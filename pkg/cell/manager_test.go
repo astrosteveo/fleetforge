@@ -919,3 +919,142 @@ func TestCellSplitAcceptanceCriteria(t *testing.T) {
 
 	t.Log("All acceptance criteria verified successfully!")
 }
+
+// TestCellManager_ManualSplitCell tests the manual split override functionality
+func TestCellManager_ManualSplitCell(t *testing.T) {
+	manager := NewCellManager()
+
+	// Create a test cell
+	spec := CellSpec{
+		ID: "test-cell",
+		Boundaries: v1.WorldBounds{
+			XMin: 0,
+			XMax: 100,
+		},
+		Capacity: CellCapacity{
+			MaxPlayers: 10,
+		},
+	}
+
+	cell, err := manager.CreateCell(spec)
+	if err != nil {
+		t.Fatalf("Failed to create cell: %v", err)
+	}
+
+	// Wait for cell to be ready
+	time.Sleep(150 * time.Millisecond)
+
+	// Add a few players (not enough to trigger automatic split)
+	for i := 0; i < 3; i++ {
+		player := &PlayerState{
+			ID: PlayerID(fmt.Sprintf("player-%d", i)),
+			Position: WorldPosition{
+				X: float64(i * 10),
+				Y: 0,
+			},
+		}
+		err := manager.AddPlayer("test-cell", player)
+		if err != nil {
+			t.Errorf("Failed to add player %d: %v", i, err)
+		}
+	}
+
+	// Verify threshold is not breached (should be 3/10 = 0.3, threshold is 0.8)
+	if cell.IsThresholdBreached() {
+		t.Error("Threshold should not be breached with only 3/10 players")
+	}
+
+	// Perform manual split with user info
+	userInfo := map[string]interface{}{
+		"manager":   "test-user",
+		"timestamp": time.Now(),
+		"resource":  "WorldSpec/test-world",
+		"action":    "manual_split_override",
+	}
+
+	childCells, err := manager.ManualSplitCell("test-cell", userInfo)
+	if err != nil {
+		t.Fatalf("Manual split failed: %v", err)
+	}
+
+	// Verify split created children
+	if len(childCells) != 2 {
+		t.Errorf("Expected 2 child cells from split, got %d", len(childCells))
+	}
+
+	// Verify original cell is removed
+	_, err = manager.GetCell("test-cell")
+	if err == nil {
+		t.Error("Original cell should be removed after split")
+	}
+
+	// Verify child cells exist and are functional
+	for i, childCell := range childCells {
+		childID := childCell.GetState().ID
+		
+		// Verify child cell is retrievable
+		retrievedCell, err := manager.GetCell(childID)
+		if err != nil {
+			t.Errorf("Child cell %s should be retrievable: %v", childID, err)
+			continue
+		}
+
+		// Verify child cell is healthy (allow time for startup)
+		cellState := retrievedCell.GetState()
+		
+		// Child cells may still be starting up, check if they're at least not in error state
+		if cellState.Phase == "Stopped" || cellState.Phase == "Error" {
+			t.Errorf("Child cell %d should not be in %s phase", i, cellState.Phase)
+		}
+
+		t.Logf("Child cell %s created successfully", childID)
+	}
+
+	// Verify events were recorded correctly
+	events := manager.GetEvents()
+	
+	// Look for split event with ManualOverride reason
+	var splitEvent *CellEvent
+	for _, event := range events {
+		if event.Type == CellEventSplit && event.CellID == "test-cell" {
+			splitEvent = &event
+			break
+		}
+	}
+
+	if splitEvent == nil {
+		t.Fatal("Split event not found")
+	}
+
+	// Verify event has correct reason
+	reason, ok := splitEvent.Metadata["reason"]
+	if !ok || reason != "ManualOverride" {
+		t.Errorf("Expected split reason 'ManualOverride', got %v", reason)
+	}
+
+	// Verify user info is in event metadata
+	eventUserInfo, ok := splitEvent.Metadata["user_info"]
+	if !ok {
+		t.Error("User info should be present in split event metadata")
+	} else {
+		userInfoMap, ok := eventUserInfo.(map[string]interface{})
+		if !ok {
+			t.Error("User info should be a map")
+		} else {
+			if userInfoMap["manager"] != "test-user" {
+				t.Errorf("Expected manager 'test-user', got %v", userInfoMap["manager"])
+			}
+			if userInfoMap["action"] != "manual_split_override" {
+				t.Errorf("Expected action 'manual_split_override', got %v", userInfoMap["action"])
+			}
+		}
+	}
+
+	// Verify split happened regardless of threshold
+	threshold, ok := splitEvent.Metadata["threshold"]
+	if !ok || threshold != 0.0 {
+		t.Errorf("Expected threshold 0.0 for manual split, got %v", threshold)
+	}
+
+	t.Logf("Manual split test completed successfully!")
+}

@@ -414,6 +414,16 @@ func (m *DefaultCellManager) handleSplitNeeded(cellID CellID, densityRatio float
 
 // SplitCell splits a cell when it exceeds the threshold
 func (m *DefaultCellManager) SplitCell(cellID CellID, splitThreshold float64) ([]*Cell, error) {
+	return m.splitCellInternal(cellID, splitThreshold, "ThresholdExceeded", nil)
+}
+
+// ManualSplitCell forces a split regardless of threshold for testing purposes
+func (m *DefaultCellManager) ManualSplitCell(cellID CellID, userInfo map[string]interface{}) ([]*Cell, error) {
+	return m.splitCellInternal(cellID, 0.0, "ManualOverride", userInfo)
+}
+
+// splitCellInternal performs the actual cell split logic
+func (m *DefaultCellManager) splitCellInternal(cellID CellID, splitThreshold float64, reason string, userInfo map[string]interface{}) ([]*Cell, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -424,9 +434,11 @@ func (m *DefaultCellManager) SplitCell(cellID CellID, splitThreshold float64) ([
 
 	parentState := parentCell.GetState()
 
-	// Check if split is really needed
-	if float64(parentState.PlayerCount)/float64(parentState.Capacity.MaxPlayers) < splitThreshold {
-		return nil, fmt.Errorf("cell %s does not meet split threshold", cellID)
+	// Check if split is really needed (skip check for manual override)
+	if reason != "ManualOverride" {
+		if float64(parentState.PlayerCount)/float64(parentState.Capacity.MaxPlayers) < splitThreshold {
+			return nil, fmt.Errorf("cell %s does not meet split threshold", cellID)
+		}
 	}
 
 	splitStart := time.Now()
@@ -490,19 +502,27 @@ func (m *DefaultCellManager) SplitCell(cellID CellID, splitThreshold float64) ([
 
 	splitDuration := time.Since(splitStart)
 
-	// Record split event
+	// Record split event with enhanced metadata
+	eventMetadata := map[string]interface{}{
+		"threshold":             splitThreshold,
+		"parent_player_count":   parentState.PlayerCount,
+		"redistributed_players": redistributedPlayers,
+		"child_count":           len(childCells),
+		"reason":                reason,
+	}
+
+	// Add user identity information for manual overrides
+	if userInfo != nil {
+		eventMetadata["user_info"] = userInfo
+	}
+
 	event := CellEvent{
 		Type:        CellEventSplit,
 		CellID:      cellID,
 		ChildrenIDs: childIDs,
 		Timestamp:   time.Now(),
 		Duration:    &splitDuration,
-		Metadata: map[string]interface{}{
-			"threshold":             splitThreshold,
-			"parent_player_count":   parentState.PlayerCount,
-			"redistributed_players": redistributedPlayers,
-			"child_count":           len(childCells),
-		},
+		Metadata:    eventMetadata,
 	}
 	m.events = append(m.events, event)
 

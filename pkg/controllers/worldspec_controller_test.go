@@ -615,3 +615,144 @@ func findSubstring(s, substring string) bool {
 	}
 	return false
 }
+
+// TestManualSplitOverride tests the manual split override functionality
+func TestManualSplitOverride(t *testing.T) {
+	// Setup logging
+	logf.SetLogger(zap.New(zap.UseDevMode(true)))
+
+	// Import the cell package for testing
+	scheme := runtime.NewScheme()
+	_ = fleetforgev1.AddToScheme(scheme)
+	_ = appsv1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+
+	t.Run("Manual split override with specific cell ID", func(t *testing.T) {
+		// Create test WorldSpec with manual split annotation
+		yMin := -1000.0
+		yMax := 1000.0
+		worldSpec := &fleetforgev1.WorldSpec{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-world",
+				Namespace: "default",
+				Annotations: map[string]string{
+					ForceSplitAnnotation: "test-world-cell-0",
+				},
+				ManagedFields: []metav1.ManagedFieldsEntry{
+					{
+						Manager: "test-user",
+						Time:    &metav1.Time{Time: time.Now()},
+					},
+				},
+			},
+			Spec: fleetforgev1.WorldSpecSpec{
+				Topology: fleetforgev1.WorldTopology{
+					InitialCells: 1,
+					WorldBoundaries: fleetforgev1.WorldBounds{
+						XMin: -1000.0,
+						XMax: 1000.0,
+						YMin: &yMin,
+						YMax: &yMax,
+					},
+				},
+				GameServerImage: "test-image:latest",
+			},
+		}
+
+		// Create fake client
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(worldSpec).
+			Build()
+
+		// Create mock recorder
+		recorder := record.NewFakeRecorder(10)
+
+		// Create reconciler with mock cell manager
+		reconciler := &WorldSpecReconciler{
+			Client:   fakeClient,
+			Scheme:   scheme,
+			Log:      logf.FromContext(context.Background()),
+			Recorder: recorder,
+		}
+
+		// Test the manual split annotation parsing
+		cellIDs := reconciler.parseCellIDsFromAnnotation("test-world-cell-0", worldSpec)
+		if len(cellIDs) != 1 || cellIDs[0] != "test-world-cell-0" {
+			t.Errorf("Expected cell ID 'test-world-cell-0', got %v", cellIDs)
+		}
+
+		// Test user identity extraction
+		userInfo := reconciler.extractUserIdentity(worldSpec)
+		if userInfo["manager"] != "test-user" {
+			t.Errorf("Expected manager 'test-user', got %v", userInfo["manager"])
+		}
+		if userInfo["action"] != "manual_split_override" {
+			t.Errorf("Expected action 'manual_split_override', got %v", userInfo["action"])
+		}
+	})
+
+	t.Run("Manual split override with 'all' keyword", func(t *testing.T) {
+		// Create test WorldSpec with "all" annotation
+		yMin := -1000.0
+		yMax := 1000.0
+		worldSpec := &fleetforgev1.WorldSpec{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-world",
+				Namespace: "default",
+			},
+			Spec: fleetforgev1.WorldSpecSpec{
+				Topology: fleetforgev1.WorldTopology{
+					InitialCells: 3,
+					WorldBoundaries: fleetforgev1.WorldBounds{
+						XMin: -1000.0,
+						XMax: 1000.0,
+						YMin: &yMin,
+						YMax: &yMax,
+					},
+				},
+			},
+		}
+
+		reconciler := &WorldSpecReconciler{}
+		cellIDs := reconciler.parseCellIDsFromAnnotation("all", worldSpec)
+		
+		expectedCells := []string{
+			"test-world-cell-0",
+			"test-world-cell-1", 
+			"test-world-cell-2",
+		}
+		
+		if len(cellIDs) != len(expectedCells) {
+			t.Errorf("Expected %d cells, got %d", len(expectedCells), len(cellIDs))
+		}
+		
+		for i, expected := range expectedCells {
+			if cellIDs[i] != expected {
+				t.Errorf("Expected cell ID '%s', got '%s'", expected, cellIDs[i])
+			}
+		}
+	})
+
+	t.Run("Manual split override with comma-separated IDs", func(t *testing.T) {
+		worldSpec := &fleetforgev1.WorldSpec{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test-world",
+			},
+		}
+
+		reconciler := &WorldSpecReconciler{}
+		cellIDs := reconciler.parseCellIDsFromAnnotation("cell-1, cell-2, cell-3", worldSpec)
+		
+		expected := []string{"cell-1", "cell-2", "cell-3"}
+		if len(cellIDs) != len(expected) {
+			t.Errorf("Expected %d cells, got %d", len(expected), len(cellIDs))
+		}
+		
+		for i, exp := range expected {
+			if cellIDs[i] != exp {
+				t.Errorf("Expected cell ID '%s', got '%s'", exp, cellIDs[i])
+			}
+		}
+	})
+}
