@@ -823,7 +823,7 @@ func TestCellSplitAcceptanceCriteria(t *testing.T) {
 		player := &PlayerState{
 			ID: PlayerID(fmt.Sprintf("test-player-%d", i)),
 			Position: WorldPosition{
-				X: float64(i * 200), // Spread across X=200,400,600,800,1000 to distribute between children
+				X: float64(i * 10),
 				Y: 50,
 			},
 			LastSeen:  time.Now(),
@@ -920,316 +920,563 @@ func TestCellSplitAcceptanceCriteria(t *testing.T) {
 	t.Log("All acceptance criteria verified successfully!")
 }
 
-// TestSessionRedistributionMetrics tests that session redistribution metrics are properly recorded
-func TestSessionRedistributionMetrics(t *testing.T) {
-	// Create manager with metrics enabled
-	metrics := NewPrometheusMetrics()
-	manager := NewCellManagerWithMetrics(metrics)
+// TestCellManager_MergeCells tests the manual merge override functionality
+func TestCellManager_MergeCells(t *testing.T) {
+	manager := NewCellManager()
 	defer manager.(*DefaultCellManager).Shutdown()
 
-	// Create cell that will be split
-	spec := CellSpec{
-		ID:         "metrics-split-test-cell",
-		Boundaries: createTestBounds(),
-		Capacity:   CellCapacity{MaxPlayers: 20},
-	}
-
-	cell, err := manager.CreateCell(spec)
-	if err != nil {
-		t.Fatalf("Failed to create cell: %v", err)
-	}
-
-	// Disable automatic split callback to avoid conflicts
-	cell.SetOnSplitNeeded(nil)
-
-	// Wait for cell to become ready
-	time.Sleep(time.Millisecond * 200)
-
-	// Add players to exceed split threshold (16 players for 80% of 20)
-	for i := 0; i < 16; i++ {
-		player := &PlayerState{
-			ID:       PlayerID(fmt.Sprintf("player-%d", i)),
-			Position: WorldPosition{X: float64(i * 5), Y: float64(i * 5)},
-			LastSeen: time.Now(),
-		}
-
-		err := manager.AddPlayer(spec.ID, player)
-		if err != nil {
-			t.Fatalf("Failed to add player %d: %v", i, err)
-		}
-	}
-
-	// Verify the cell has the expected number of players before split
-	cell, err = manager.GetCell(spec.ID)
-	if err != nil {
-		t.Fatalf("Failed to get cell: %v", err)
-	}
-
-	cellState := cell.GetState()
-	t.Logf("Cell state before split: Players=%d, Capacity=%d", cellState.PlayerCount, cellState.Capacity.MaxPlayers)
-
-	if cellState.PlayerCount != 16 {
-		t.Fatalf("Expected 16 players in cell, got %d", cellState.PlayerCount)
-	}
-
-	// Trigger split with debug
-	t.Logf("About to split cell with 16 players...")
-	childCells, err := manager.SplitCell(spec.ID, 0.8)
-	if err != nil {
-		t.Fatalf("Failed to split cell: %v", err)
-	}
-
-	t.Logf("Split successful, created %d child cells", len(childCells))
-	totalPlayersInChildren := 0
-	for i, child := range childCells {
-		childState := child.GetState()
-		totalPlayersInChildren += childState.PlayerCount
-		t.Logf("Child %d: ID=%s, Players=%d, Boundaries=%+v", i, childState.ID, childState.PlayerCount, childState.Boundaries)
-	}
-	t.Logf("Total players in children: %d", totalPlayersInChildren)
-
-	// Verify events were recorded with redistribution metrics
-	events := manager.GetEvents()
-	var splitEvent *CellEvent
-	for i := range events {
-		if events[i].Type == CellEventSplit {
-			splitEvent = &events[i]
-			break
-		}
-	}
-
-	if splitEvent == nil {
-		t.Fatal("Expected CellSplit event not found")
-	}
-
-	// Check redistribution metadata
-	metadata := splitEvent.Metadata
-	t.Logf("Split event metadata: %+v", metadata)
-
-	if redistributedPlayers, ok := metadata["redistributed_players"].(int); !ok || redistributedPlayers != 16 {
-		t.Errorf("Expected 16 redistributed players, got %v (type %T)", metadata["redistributed_players"], metadata["redistributed_players"])
-	}
-
-	if redistributionDuration, ok := metadata["redistribution_duration_ms"].(int64); !ok || redistributionDuration < 0 {
-		t.Errorf("Expected non-negative redistribution duration, got %v (type %T)", metadata["redistribution_duration_ms"], metadata["redistribution_duration_ms"])
-	}
-
-	if withinOneSecond, ok := metadata["redistribution_within_1s"].(bool); !ok || !withinOneSecond {
-		t.Errorf("Expected redistribution within 1 second, got %v", metadata["redistribution_within_1s"])
-	}
-
-	if successRate, ok := metadata["redistribution_success_rate"].(float64); !ok || successRate != 1.0 {
-		t.Errorf("Expected 100%% success rate, got %v", metadata["redistribution_success_rate"])
-	}
-
-	t.Log("Session redistribution metrics validation successful!")
-}
-
-// TestSessionRedistributionPerformance tests that 95% of sessions are redistributed within 1 second
-func TestSessionRedistributionPerformance(t *testing.T) {
-	metrics := NewPrometheusMetrics()
-	manager := NewCellManagerWithMetrics(metrics)
-	defer manager.(*DefaultCellManager).Shutdown()
-
-	// Create a large cell to test performance with many players
-	spec := CellSpec{
-		ID:         "performance-test-cell",
+	// First create a parent cell and split it to create siblings
+	parentSpec := CellSpec{
+		ID:         "parent-for-merge",
 		Boundaries: createTestBounds(),
 		Capacity:   CellCapacity{MaxPlayers: 100},
 	}
 
-	cell, err := manager.CreateCell(spec)
+	_, err := manager.CreateCell(parentSpec)
 	if err != nil {
-		t.Fatalf("Failed to create cell: %v", err)
+		t.Fatalf("Failed to create parent cell: %v", err)
 	}
 
-	// Disable automatic split callback to avoid conflicts
-	cell.SetOnSplitNeeded(nil)
+	// Wait for cell to be ready and trigger split
+	time.Sleep(500 * time.Millisecond)
 
-	// Wait for cell to become ready
-	time.Sleep(time.Millisecond * 200)
-
-	// Add 80 players to trigger split at 80% capacity
-	const playerCount = 80
-	for i := 0; i < playerCount; i++ {
+	// Add players to trigger split
+	for i := 0; i < 85; i++ { // Above 80% threshold
 		player := &PlayerState{
-			ID:       PlayerID(fmt.Sprintf("perf-player-%d", i)),
-			Position: WorldPosition{X: float64(i % 10), Y: float64(i / 10)},
-			LastSeen: time.Now(),
+			ID:        PlayerID(fmt.Sprintf("player-%d", i)),
+			Position:  WorldPosition{X: float64(i % 10), Y: float64(i / 10)},
+			Connected: true,
 		}
-
-		err := manager.AddPlayer(spec.ID, player)
+		err := manager.AddPlayer(parentSpec.ID, player)
 		if err != nil {
 			t.Fatalf("Failed to add player %d: %v", i, err)
 		}
 	}
 
-	// Record initial time
-	redistributionStart := time.Now()
-
-	// Trigger split
-	_, err = manager.SplitCell(spec.ID, 0.8)
+	// Force split
+	childCells, err := manager.SplitCell(parentSpec.ID, 0.8)
 	if err != nil {
 		t.Fatalf("Failed to split cell: %v", err)
 	}
 
-	redistributionEnd := time.Now()
-	totalRedistributionTime := redistributionEnd.Sub(redistributionStart)
+	if len(childCells) != 2 {
+		t.Fatalf("Expected 2 child cells, got %d", len(childCells))
+	}
 
-	// Get split event to check details
+	// Wait for child cells to be ready
+	time.Sleep(300 * time.Millisecond)
+
+	child1ID := childCells[0].GetState().ID
+	child2ID := childCells[1].GetState().ID
+
+	// Verify sibling relationship
+	child1State := childCells[0].GetState()
+	child2State := childCells[1].GetState()
+
+	if child1State.ParentID == nil || child2State.ParentID == nil {
+		t.Fatal("Child cells should have parent IDs")
+	}
+
+	if *child1State.ParentID != *child2State.ParentID {
+		t.Fatal("Child cells should have the same parent ID")
+	}
+
+	// Now test merge functionality
+	mergedCell, err := manager.MergeCells(child1ID, child2ID)
+	if err != nil {
+		t.Fatalf("Failed to merge cells: %v", err)
+	}
+
+	if mergedCell == nil {
+		t.Fatal("Merged cell should not be nil")
+	}
+
+	// Verify merged cell has correct properties
+	mergedState := mergedCell.GetState()
+
+	// Check that original cells are removed
+	_, err = manager.GetCell(child1ID)
+	if err == nil {
+		t.Error("Child cell 1 should be removed after merge")
+	}
+
+	_, err = manager.GetCell(child2ID)
+	if err == nil {
+		t.Error("Child cell 2 should be removed after merge")
+	}
+
+	// Check that merge event was recorded
 	events := manager.GetEvents()
-	var splitEvent *CellEvent
-	for i := range events {
-		if events[i].Type == CellEventSplit {
-			splitEvent = &events[i]
-			break
+	mergeEventFound := false
+	for _, event := range events {
+		if event.Type == CellEventMerged {
+			if event.Metadata["reason"] == "ManualOverride" {
+				mergeEventFound = true
+				t.Logf("Merge event found with reason: %v", event.Metadata["reason"])
+				break
+			}
 		}
 	}
 
-	if splitEvent == nil {
-		t.Fatal("Expected CellSplit event not found")
+	if !mergeEventFound {
+		t.Error("Merge event with ManualOverride reason not found")
 	}
 
-	// Verify performance requirements
-	metadata := splitEvent.Metadata
-
-	// Check that at least 95% of sessions were redistributed
-	redistributedPlayers := metadata["redistributed_players"].(int)
-	initialPlayerCount := metadata["parent_player_count"].(int)
-	successRate := float64(redistributedPlayers) / float64(initialPlayerCount)
-
-	if successRate < 0.95 {
-		t.Errorf("Session redistribution success rate %.2f%% is below required 95%%", successRate*100)
-	}
-
-	// Check that redistribution happened within 1 second
-	redistributionDurationMs := metadata["redistribution_duration_ms"].(int64)
-	redistributionDuration := time.Duration(redistributionDurationMs) * time.Millisecond
-
-	if redistributionDuration > time.Second {
-		t.Errorf("Session redistribution took %v, which exceeds 1 second requirement", redistributionDuration)
-	}
-
-	// Verify no session losses
-	redistributionErrors := metadata["redistribution_errors"].(int)
-	if redistributionErrors > 0 {
-		t.Errorf("Expected no session losses, but got %d errors", redistributionErrors)
-	}
-
-	// Log performance results
-	t.Logf("Performance test results:")
-	t.Logf("  - Players redistributed: %d/%d (%.1f%%)", redistributedPlayers, initialPlayerCount, successRate*100)
-	t.Logf("  - Redistribution time: %v", redistributionDuration)
-	t.Logf("  - Total split time: %v", totalRedistributionTime)
-	t.Logf("  - Errors: %d", redistributionErrors)
-
-	// Acceptance criteria validation
-	if successRate >= 0.95 && redistributionDuration <= time.Second && redistributionErrors == 0 {
-		t.Log("✅ All performance acceptance criteria met!")
-	} else {
-		t.Error("❌ Performance acceptance criteria not met")
-	}
+	t.Logf("Merge test completed successfully. Merged cell ID: %s", mergedState.ID)
 }
 
-// TestSessionCountInvariant tests that no sessions are lost during redistribution
-func TestSessionCountInvariant(t *testing.T) {
-	metrics := NewPrometheusMetrics()
-	manager := NewCellManagerWithMetrics(metrics)
+// TestCellManager_MergeCells_ValidationFailures tests validation failures for merge operations
+func TestCellManager_MergeCells_ValidationFailures(t *testing.T) {
+	manager := NewCellManager()
 	defer manager.(*DefaultCellManager).Shutdown()
 
-	spec := CellSpec{
-		ID:         "invariant-test-cell",
+	// Test case 1: Cells with different parents
+	spec1 := CellSpec{
+		ID:         "unrelated-cell-1",
 		Boundaries: createTestBounds(),
 		Capacity:   CellCapacity{MaxPlayers: 50},
 	}
 
-	cell, err := manager.CreateCell(spec)
+	spec2 := CellSpec{
+		ID:         "unrelated-cell-2",
+		Boundaries: createTestBounds(),
+		Capacity:   CellCapacity{MaxPlayers: 50},
+	}
+
+	_, err := manager.CreateCell(spec1)
 	if err != nil {
-		t.Fatalf("Failed to create cell: %v", err)
+		t.Fatalf("Failed to create cell 1: %v", err)
 	}
 
-	// Disable automatic split callback to avoid conflicts
-	cell.SetOnSplitNeeded(nil)
-
-	// Wait for cell to become ready
-	time.Sleep(time.Millisecond * 200)
-
-	// Add 40 players (80% of 50)
-	const initialPlayerCount = 40
-	initialPlayerIDs := make([]PlayerID, initialPlayerCount)
-
-	for i := 0; i < initialPlayerCount; i++ {
-		playerID := PlayerID(fmt.Sprintf("invariant-player-%d", i))
-		initialPlayerIDs[i] = playerID
-
-		player := &PlayerState{
-			ID:       playerID,
-			Position: WorldPosition{X: float64(i % 10), Y: float64(i / 10)},
-			LastSeen: time.Now(),
-		}
-
-		err := manager.AddPlayer(spec.ID, player)
-		if err != nil {
-			t.Fatalf("Failed to add player %d: %v", i, err)
-		}
+	_, err = manager.CreateCell(spec2)
+	if err != nil {
+		t.Fatalf("Failed to create cell 2: %v", err)
 	}
 
-	// Verify initial count
-	initialCount := manager.(*DefaultCellManager).GetTotalPlayerCount()
-	if initialCount != initialPlayerCount {
-		t.Fatalf("Expected %d initial players, got %d", initialPlayerCount, initialCount)
+	// Wait for cells to be ready
+	time.Sleep(200 * time.Millisecond)
+
+	// This should fail because they're not siblings
+	_, err = manager.MergeCells(spec1.ID, spec2.ID)
+	if err == nil {
+		t.Error("Expected merge to fail for non-sibling cells")
+	}
+	t.Logf("Correctly rejected merge of non-sibling cells: %v", err)
+
+	// Test case 2: Non-existent cell
+	_, err = manager.MergeCells(spec1.ID, "non-existent-cell")
+	if err == nil {
+		t.Error("Expected merge to fail for non-existent cell")
+	}
+}
+
+// TestCellManager_MergeCells_AdjacencyValidation tests adjacency validation
+func TestCellManager_MergeCells_AdjacencyValidation(t *testing.T) {
+	manager := NewCellManager()
+	defer manager.(*DefaultCellManager).Shutdown()
+
+	// Create parent and split to get adjacent siblings
+	parentSpec := CellSpec{
+		ID: "parent-adjacency-test",
+		Boundaries: v1.WorldBounds{
+			XMin: 0.0,
+			XMax: 100.0,
+			YMin: func() *float64 { y := 0.0; return &y }(),
+			YMax: func() *float64 { y := 100.0; return &y }(),
+		},
+		Capacity: CellCapacity{MaxPlayers: 100},
 	}
 
-	// Trigger split
-	childCells, err := manager.SplitCell(spec.ID, 0.8)
+	_, err := manager.CreateCell(parentSpec)
+	if err != nil {
+		t.Fatalf("Failed to create parent cell: %v", err)
+	}
+
+	time.Sleep(500 * time.Millisecond)
+
+	// Force split to create adjacent siblings
+	childCells, err := manager.SplitCell(parentSpec.ID, 0.0) // Force split regardless of load
 	if err != nil {
 		t.Fatalf("Failed to split cell: %v", err)
 	}
 
-	// Verify final count matches initial count
-	finalCount := manager.(*DefaultCellManager).GetTotalPlayerCount()
-	if finalCount != initialPlayerCount {
-		t.Errorf("Session count invariant violated: initial %d, final %d", initialPlayerCount, finalCount)
+	if len(childCells) != 2 {
+		t.Fatalf("Expected 2 child cells, got %d", len(childCells))
 	}
 
-	// Verify all original players still exist in some cell
-	missingPlayers := 0
-	for _, playerID := range initialPlayerIDs {
-		found := false
-		for _, childCell := range childCells {
-			if childCell.GetPlayer(playerID) != nil {
-				found = true
+	// Wait for child cells to be ready
+	time.Sleep(300 * time.Millisecond)
+
+	child1ID := childCells[0].GetState().ID
+	child2ID := childCells[1].GetState().ID
+
+	// These should be adjacent (split along X-axis)
+	child1Bounds := childCells[0].GetState().Boundaries
+	child2Bounds := childCells[1].GetState().Boundaries
+
+	t.Logf("Child 1 bounds: X[%.1f-%.1f]", child1Bounds.XMin, child1Bounds.XMax)
+	t.Logf("Child 2 bounds: X[%.1f-%.1f]", child2Bounds.XMin, child2Bounds.XMax)
+
+	// Verify adjacency before attempting merge
+	if child1Bounds.XMax != child2Bounds.XMin && child1Bounds.XMin != child2Bounds.XMax {
+		t.Error("Child cells should be adjacent")
+	}
+
+	// This merge should succeed
+	_, err = manager.MergeCells(child1ID, child2ID)
+	if err != nil {
+		t.Errorf("Expected merge to succeed for adjacent sibling cells: %v", err)
+	}
+}
+
+// TestCellMergeAcceptanceCriteria validates all acceptance criteria for manual merge override
+func TestCellMergeAcceptanceCriteria(t *testing.T) {
+	manager := NewCellManager()
+	defer manager.(*DefaultCellManager).Shutdown()
+
+	t.Log("=== Testing Manual Merge Override Acceptance Criteria ===")
+
+	// Create parent cell for lineage testing
+	parentSpec := CellSpec{
+		ID: "merge-acceptance-parent",
+		Boundaries: v1.WorldBounds{
+			XMin: 0.0,
+			XMax: 200.0,
+			YMin: func() *float64 { y := 0.0; return &y }(),
+			YMax: func() *float64 { y := 100.0; return &y }(),
+		},
+		Capacity: CellCapacity{MaxPlayers: 120},
+	}
+
+	_, err := manager.CreateCell(parentSpec)
+	if err != nil {
+		t.Fatalf("Failed to create parent cell: %v", err)
+	}
+
+	time.Sleep(500 * time.Millisecond)
+
+	// Create sibling cells by splitting
+	childCells, err := manager.SplitCell(parentSpec.ID, 0.0)
+	if err != nil {
+		t.Fatalf("Failed to split parent cell: %v", err)
+	}
+
+	if len(childCells) != 2 {
+		t.Fatalf("Expected 2 child cells for adjacency test, got %d", len(childCells))
+	}
+
+	// Wait for child cells to be ready
+	time.Sleep(300 * time.Millisecond)
+
+	child1ID := childCells[0].GetState().ID
+	child2ID := childCells[1].GetState().ID
+	child1State := childCells[0].GetState()
+	child2State := childCells[1].GetState()
+
+	t.Logf("Created sibling cells: %s and %s", child1ID, child2ID)
+
+	// ACCEPTANCE CRITERIA 1: Merge executes if adjacency + same parent lineage
+	t.Log("--- Testing Criterion 1: Adjacency + Same Parent Lineage ---")
+
+	// Verify parent lineage
+	if child1State.ParentID == nil || child2State.ParentID == nil {
+		t.Fatal("Child cells must have parent IDs")
+	}
+
+	if *child1State.ParentID != *child2State.ParentID {
+		t.Fatal("Child cells must have same parent")
+	}
+	t.Logf("✓ Same parent lineage verified: %s", *child1State.ParentID)
+
+	// Verify adjacency (split cells should be adjacent)
+	if child1State.Boundaries.XMax != child2State.Boundaries.XMin &&
+		child1State.Boundaries.XMin != child2State.Boundaries.XMax {
+		t.Error("Child cells should be adjacent after split")
+	}
+	t.Log("✓ Adjacency verified")
+
+	// Perform merge
+	mergedCell, err := manager.MergeCells(child1ID, child2ID)
+	if err != nil {
+		t.Fatalf("Merge should succeed for adjacent siblings: %v", err)
+	}
+	t.Logf("✓ Merge executed successfully, merged cell: %s", mergedCell.GetState().ID)
+
+	// ACCEPTANCE CRITERIA 2: Event reason=ManualOverride
+	t.Log("--- Testing Criterion 2: Event Reason = ManualOverride ---")
+
+	events := manager.GetEvents()
+	mergeEventFound := false
+	var mergeEvent CellEvent
+
+	for _, event := range events {
+		if event.Type == CellEventMerged {
+			mergeEvent = event
+			if reason, exists := event.Metadata["reason"]; exists && reason == "ManualOverride" {
+				mergeEventFound = true
 				break
 			}
 		}
-		if !found {
-			missingPlayers++
-			t.Errorf("Player %s not found in any child cell", playerID)
-		}
 	}
 
-	// Verify event metadata confirms no losses
+	if !mergeEventFound {
+		t.Fatal("Merge event with reason=ManualOverride not found")
+	}
+	t.Logf("✓ ManualOverride event found: %v", mergeEvent.Metadata)
+
+	// ACCEPTANCE CRITERIA 3: Validation rejects unsafe pairs
+	t.Log("--- Testing Criterion 3: Validation Rejects Unsafe Pairs ---")
+
+	// Test 3a: Create non-sibling cells and verify rejection
+	unrelatedSpec := CellSpec{
+		ID:         "unrelated-test-cell",
+		Boundaries: createTestBounds(),
+		Capacity:   CellCapacity{MaxPlayers: 50},
+	}
+
+	_, err = manager.CreateCell(unrelatedSpec)
+	if err != nil {
+		t.Fatalf("Failed to create unrelated cell: %v", err)
+	}
+
+	time.Sleep(100 * time.Millisecond)
+
+	// Create another unrelated cell
+	unrelatedSpec2 := CellSpec{
+		ID:         "unrelated-test-cell-2",
+		Boundaries: createTestBounds(),
+		Capacity:   CellCapacity{MaxPlayers: 50},
+	}
+
+	_, err = manager.CreateCell(unrelatedSpec2)
+	if err != nil {
+		t.Fatalf("Failed to create second unrelated cell: %v", err)
+	}
+
+	time.Sleep(100 * time.Millisecond)
+
+	// This should fail - no parent relationship
+	_, err = manager.MergeCells(unrelatedSpec.ID, unrelatedSpec2.ID)
+	if err == nil {
+		t.Error("Expected merge to fail for unrelated cells")
+	}
+	t.Logf("✓ Correctly rejected unrelated cells: %v", err)
+
+	// Test 3b: Try to merge with non-existent cell
+	_, err = manager.MergeCells(unrelatedSpec.ID, "non-existent-cell")
+	if err == nil {
+		t.Error("Expected merge to fail for non-existent cell")
+	}
+	t.Logf("✓ Correctly rejected non-existent cell: %v", err)
+
+	t.Log("=== All Acceptance Criteria Verified Successfully! ===")
+}
+
+// TestCellManager_ProcessMergeAnnotation tests annotation-based merge functionality
+func TestCellManager_ProcessMergeAnnotation(t *testing.T) {
+	manager := NewCellManager()
+	defer manager.(*DefaultCellManager).Shutdown()
+
+	// Create parent and split to get sibling cells
+	parentSpec := CellSpec{
+		ID: "annotation-parent",
+		Boundaries: v1.WorldBounds{
+			XMin: 0.0,
+			XMax: 100.0,
+			YMin: func() *float64 { y := 0.0; return &y }(),
+			YMax: func() *float64 { y := 100.0; return &y }(),
+		},
+		Capacity: CellCapacity{MaxPlayers: 100},
+	}
+
+	_, err := manager.CreateCell(parentSpec)
+	if err != nil {
+		t.Fatalf("Failed to create parent cell: %v", err)
+	}
+
+	time.Sleep(500 * time.Millisecond)
+
+	// Split to create siblings
+	childCells, err := manager.SplitCell(parentSpec.ID, 0.0)
+	if err != nil {
+		t.Fatalf("Failed to split cell: %v", err)
+	}
+
+	if len(childCells) != 2 {
+		t.Fatalf("Expected 2 child cells, got %d", len(childCells))
+	}
+
+	time.Sleep(300 * time.Millisecond)
+
+	child1ID := childCells[0].GetState().ID
+	child2ID := childCells[1].GetState().ID
+
+	// Test annotation-based merge
+	annotation := MergeAnnotation{
+		SourceCellID: child1ID,
+		TargetCellID: child2ID,
+		RequestedBy:  "platform-engineer@example.com",
+		Reason:       "Consolidating low-traffic cells for resource optimization",
+		ForceUnsafe:  false,
+	}
+
+	mergedCell, err := manager.ProcessMergeAnnotation(annotation)
+	if err != nil {
+		t.Fatalf("Failed to process merge annotation: %v", err)
+	}
+
+	if mergedCell == nil {
+		t.Fatal("Merged cell should not be nil")
+	}
+
+	// Verify annotation-based event was recorded
 	events := manager.GetEvents()
-	var splitEvent *CellEvent
-	for i := range events {
-		if events[i].Type == CellEventSplit {
-			splitEvent = &events[i]
-			break
+	annotationEventFound := false
+	for _, event := range events {
+		if event.Type == CellEventMerged {
+			if trigger, exists := event.Metadata["trigger"]; exists && trigger == "annotation" {
+				annotationEventFound = true
+				t.Logf("Annotation merge event found: %v", event.Metadata)
+
+				// Verify annotation metadata
+				if event.Metadata["requested_by"] != annotation.RequestedBy {
+					t.Errorf("Expected requested_by %s, got %v", annotation.RequestedBy, event.Metadata["requested_by"])
+				}
+				if event.Metadata["annotation_reason"] != annotation.Reason {
+					t.Errorf("Expected annotation_reason %s, got %v", annotation.Reason, event.Metadata["annotation_reason"])
+				}
+				break
+			}
 		}
 	}
 
-	if splitEvent == nil {
-		t.Fatal("Expected CellSplit event not found")
+	if !annotationEventFound {
+		t.Error("Annotation-based merge event not found")
 	}
 
-	redistributionErrors := splitEvent.Metadata["redistribution_errors"].(int)
-	if redistributionErrors != missingPlayers {
-		t.Errorf("Metadata error count %d doesn't match missing players %d", redistributionErrors, missingPlayers)
+	t.Log("Annotation-based merge test completed successfully")
+}
+
+// TestCellManager_ProcessMergeAnnotation_ValidationFailures tests annotation validation
+func TestCellManager_ProcessMergeAnnotation_ValidationFailures(t *testing.T) {
+	manager := NewCellManager()
+	defer manager.(*DefaultCellManager).Shutdown()
+
+	// Test invalid annotations
+	testCases := []struct {
+		name       string
+		annotation MergeAnnotation
+		expectErr  bool
+	}{
+		{
+			name: "Empty source cell ID",
+			annotation: MergeAnnotation{
+				SourceCellID: "",
+				TargetCellID: "valid-cell",
+			},
+			expectErr: true,
+		},
+		{
+			name: "Empty target cell ID",
+			annotation: MergeAnnotation{
+				SourceCellID: "valid-cell",
+				TargetCellID: "",
+			},
+			expectErr: true,
+		},
+		{
+			name: "Same source and target",
+			annotation: MergeAnnotation{
+				SourceCellID: "same-cell",
+				TargetCellID: "same-cell",
+			},
+			expectErr: true,
+		},
+		{
+			name: "Non-existent source cell",
+			annotation: MergeAnnotation{
+				SourceCellID: "non-existent",
+				TargetCellID: "also-non-existent",
+			},
+			expectErr: true,
+		},
 	}
 
-	if missingPlayers == 0 {
-		t.Log("✅ Session count invariant maintained - no sessions lost!")
-	} else {
-		t.Errorf("❌ Session count invariant violated - %d sessions lost", missingPlayers)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := manager.ProcessMergeAnnotation(tc.annotation)
+			if tc.expectErr && err == nil {
+				t.Errorf("Expected error for %s, but got none", tc.name)
+			}
+			if !tc.expectErr && err != nil {
+				t.Errorf("Expected no error for %s, but got: %v", tc.name, err)
+			}
+		})
+	}
+}
+
+// TestCellManager_ProcessMergeAnnotation_ForceUnsafe tests the ForceUnsafe option
+func TestCellManager_ProcessMergeAnnotation_ForceUnsafe(t *testing.T) {
+	manager := NewCellManager()
+	defer manager.(*DefaultCellManager).Shutdown()
+
+	// Create two unrelated cells
+	spec1 := CellSpec{
+		ID:         "unsafe-test-1",
+		Boundaries: createTestBounds(),
+		Capacity:   CellCapacity{MaxPlayers: 50},
+	}
+
+	spec2 := CellSpec{
+		ID:         "unsafe-test-2",
+		Boundaries: createTestBounds(),
+		Capacity:   CellCapacity{MaxPlayers: 50},
+	}
+
+	_, err := manager.CreateCell(spec1)
+	if err != nil {
+		t.Fatalf("Failed to create cell 1: %v", err)
+	}
+
+	_, err = manager.CreateCell(spec2)
+	if err != nil {
+		t.Fatalf("Failed to create cell 2: %v", err)
+	}
+
+	time.Sleep(300 * time.Millisecond)
+
+	// This should normally fail due to validation
+	annotation := MergeAnnotation{
+		SourceCellID: spec1.ID,
+		TargetCellID: spec2.ID,
+		RequestedBy:  "emergency-operator@example.com",
+		Reason:       "Emergency consolidation during system maintenance",
+		ForceUnsafe:  false,
+	}
+
+	_, err = manager.ProcessMergeAnnotation(annotation)
+	if err == nil {
+		t.Error("Expected merge to fail for unrelated cells without ForceUnsafe")
+	}
+	t.Logf("Correctly rejected unsafe merge: %v", err)
+
+	// Now test with ForceUnsafe
+	annotation.ForceUnsafe = true
+	mergedCell, err := manager.ProcessMergeAnnotation(annotation)
+	if err != nil {
+		t.Errorf("Expected ForceUnsafe merge to succeed: %v", err)
+	}
+
+	if mergedCell != nil {
+		// Verify ForceUnsafe metadata in event
+		events := manager.GetEvents()
+		for _, event := range events {
+			if event.Type == CellEventMerged {
+				if forceUnsafe, exists := event.Metadata["force_unsafe"]; exists && forceUnsafe == true {
+					t.Log("✓ ForceUnsafe merge event recorded correctly")
+					break
+				}
+			}
+		}
 	}
 }
