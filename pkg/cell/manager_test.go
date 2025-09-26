@@ -968,7 +968,6 @@ func TestCellSplitCooldown(t *testing.T) {
 	var cooldownBlocksIncremented bool
 
 	// Create a custom manager to track cooldown blocks without Prometheus
-	dmgr := manager.(*DefaultCellManager)
 
 	// Force threshold breach by calling the threshold callback directly
 	// First, let's get the cell and set up the split callback
@@ -1044,8 +1043,10 @@ func TestCellSplitCooldown(t *testing.T) {
 	// Manually call handleSplitNeeded to simulate threshold breach
 	// We'll capture console output to verify cooldown message
 	t.Log("Triggering handleSplitNeeded to test cooldown...")
-	dmgr.handleSplitNeeded(childID, 0.95)
-	cooldownBlocksIncremented = true // We know it was called during cooldown
+	if dmgr, ok := manager.(*DefaultCellManager); ok {
+		dmgr.handleSplitNeeded(childID, 0.95)
+		cooldownBlocksIncremented = true // We know it was called during cooldown
+	}
 
 	// Check that cooldown blocks were incremented (simulated)
 	if !cooldownBlocksIncremented {
@@ -1227,38 +1228,6 @@ func TestCellManager_ManualSplitCell(t *testing.T) {
 		}
 	}
 
-	// Manually call handleSplitNeeded to simulate threshold breach
-	// We'll capture console output to verify cooldown message
-	t.Log("Triggering handleSplitNeeded to test cooldown...")
-	dmgr.handleSplitNeeded(childID, 0.95)
-	cooldownBlocksIncremented = true // We know it was called during cooldown
+	t.Log("Manual split functionality verified successfully!")
 
-	// Check that cooldown blocks were incremented (simulated)
-	if !cooldownBlocksIncremented {
-		t.Error("Expected cooldown block to be triggered")
-	} else {
-		t.Logf("Cooldown block was triggered as expected")
-	}
-
-	// Verify the child cell still exists (wasn't split due to cooldown)
-	_, err = manager.GetCell(childID)
-	if err != nil {
-		t.Error("Child cell should still exist after blocked split attempt")
-	}
-
-	// Wait for cooldown to expire
-	t.Log("Waiting for cooldown to expire...")
-	time.Sleep(cooldownDuration + 100*time.Millisecond)
-
-	// Now try to split again - should succeed
-	t.Log("Attempting split after cooldown expires...")
-	secondChildren, err := manager.SplitCell(childID, 0.9)
-	if err == nil && len(secondChildren) > 0 {
-		t.Log("Split succeeded after cooldown expired")
-	} else {
-		// This might fail if the child cell doesn't have enough players, but that's ok
-		t.Logf("Split after cooldown failed (may be expected): %v", err)
-	}
-
-	t.Log("Cooldown functionality verified successfully!")
 }
