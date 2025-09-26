@@ -122,6 +122,9 @@ type CellManager interface {
 	SplitCell(cellID CellID, splitThreshold float64) ([]*Cell, error)
 	MergeCells(cellID1, cellID2 CellID) (*Cell, error)
 
+	// Annotation-based merge operations
+	ProcessMergeAnnotation(annotation MergeAnnotation) (*Cell, error)
+
 	// Event handling
 	GetEvents() []CellEvent
 	GetEventsSince(since time.Time) []CellEvent
@@ -192,4 +195,18 @@ type CellMetrics struct {
 	LastSplitTime       time.Time `json:"lastSplitTime"`       // When cell was last split
 	SplitCount          int       `json:"splitCount"`          // Number of times this cell has split
 	AvgSplitDuration    float64   `json:"avgSplitDuration"`    // Average split duration in milliseconds
+}
+
+// MergeAnnotation represents a manual merge request annotation
+type MergeAnnotation struct {
+	// SourceCellID is the first cell to merge
+	SourceCellID CellID `json:"sourceCellId"`
+	// TargetCellID is the second cell to merge
+	TargetCellID CellID `json:"targetCellId"`
+	// RequestedBy is the operator who requested the merge
+	RequestedBy string `json:"requestedBy,omitempty"`
+	// Reason is the operational reason for the merge
+	Reason string `json:"reason,omitempty"`
+	// ForceUnsafe bypasses certain safety checks (use with extreme caution)
+	ForceUnsafe bool `json:"forceUnsafe,omitempty"`
 }

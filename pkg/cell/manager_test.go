@@ -1271,3 +1271,212 @@ func TestCellMergeAcceptanceCriteria(t *testing.T) {
 
 	t.Log("=== All Acceptance Criteria Verified Successfully! ===")
 }
+
+// TestCellManager_ProcessMergeAnnotation tests annotation-based merge functionality
+func TestCellManager_ProcessMergeAnnotation(t *testing.T) {
+	manager := NewCellManager()
+	defer manager.(*DefaultCellManager).Shutdown()
+
+	// Create parent and split to get sibling cells
+	parentSpec := CellSpec{
+		ID: "annotation-parent",
+		Boundaries: v1.WorldBounds{
+			XMin: 0.0,
+			XMax: 100.0,
+			YMin: func() *float64 { y := 0.0; return &y }(),
+			YMax: func() *float64 { y := 100.0; return &y }(),
+		},
+		Capacity: CellCapacity{MaxPlayers: 100},
+	}
+
+	_, err := manager.CreateCell(parentSpec)
+	if err != nil {
+		t.Fatalf("Failed to create parent cell: %v", err)
+	}
+
+	time.Sleep(500 * time.Millisecond)
+
+	// Split to create siblings
+	childCells, err := manager.SplitCell(parentSpec.ID, 0.0)
+	if err != nil {
+		t.Fatalf("Failed to split cell: %v", err)
+	}
+
+	if len(childCells) != 2 {
+		t.Fatalf("Expected 2 child cells, got %d", len(childCells))
+	}
+
+	time.Sleep(300 * time.Millisecond)
+
+	child1ID := childCells[0].GetState().ID
+	child2ID := childCells[1].GetState().ID
+
+	// Test annotation-based merge
+	annotation := MergeAnnotation{
+		SourceCellID: child1ID,
+		TargetCellID: child2ID,
+		RequestedBy:  "platform-engineer@example.com",
+		Reason:       "Consolidating low-traffic cells for resource optimization",
+		ForceUnsafe:  false,
+	}
+
+	mergedCell, err := manager.ProcessMergeAnnotation(annotation)
+	if err != nil {
+		t.Fatalf("Failed to process merge annotation: %v", err)
+	}
+
+	if mergedCell == nil {
+		t.Fatal("Merged cell should not be nil")
+	}
+
+	// Verify annotation-based event was recorded
+	events := manager.GetEvents()
+	annotationEventFound := false
+	for _, event := range events {
+		if event.Type == CellEventMerged {
+			if trigger, exists := event.Metadata["trigger"]; exists && trigger == "annotation" {
+				annotationEventFound = true
+				t.Logf("Annotation merge event found: %v", event.Metadata)
+
+				// Verify annotation metadata
+				if event.Metadata["requested_by"] != annotation.RequestedBy {
+					t.Errorf("Expected requested_by %s, got %v", annotation.RequestedBy, event.Metadata["requested_by"])
+				}
+				if event.Metadata["annotation_reason"] != annotation.Reason {
+					t.Errorf("Expected annotation_reason %s, got %v", annotation.Reason, event.Metadata["annotation_reason"])
+				}
+				break
+			}
+		}
+	}
+
+	if !annotationEventFound {
+		t.Error("Annotation-based merge event not found")
+	}
+
+	t.Log("Annotation-based merge test completed successfully")
+}
+
+// TestCellManager_ProcessMergeAnnotation_ValidationFailures tests annotation validation
+func TestCellManager_ProcessMergeAnnotation_ValidationFailures(t *testing.T) {
+	manager := NewCellManager()
+	defer manager.(*DefaultCellManager).Shutdown()
+
+	// Test invalid annotations
+	testCases := []struct {
+		name       string
+		annotation MergeAnnotation
+		expectErr  bool
+	}{
+		{
+			name: "Empty source cell ID",
+			annotation: MergeAnnotation{
+				SourceCellID: "",
+				TargetCellID: "valid-cell",
+			},
+			expectErr: true,
+		},
+		{
+			name: "Empty target cell ID",
+			annotation: MergeAnnotation{
+				SourceCellID: "valid-cell",
+				TargetCellID: "",
+			},
+			expectErr: true,
+		},
+		{
+			name: "Same source and target",
+			annotation: MergeAnnotation{
+				SourceCellID: "same-cell",
+				TargetCellID: "same-cell",
+			},
+			expectErr: true,
+		},
+		{
+			name: "Non-existent source cell",
+			annotation: MergeAnnotation{
+				SourceCellID: "non-existent",
+				TargetCellID: "also-non-existent",
+			},
+			expectErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := manager.ProcessMergeAnnotation(tc.annotation)
+			if tc.expectErr && err == nil {
+				t.Errorf("Expected error for %s, but got none", tc.name)
+			}
+			if !tc.expectErr && err != nil {
+				t.Errorf("Expected no error for %s, but got: %v", tc.name, err)
+			}
+		})
+	}
+}
+
+// TestCellManager_ProcessMergeAnnotation_ForceUnsafe tests the ForceUnsafe option
+func TestCellManager_ProcessMergeAnnotation_ForceUnsafe(t *testing.T) {
+	manager := NewCellManager()
+	defer manager.(*DefaultCellManager).Shutdown()
+
+	// Create two unrelated cells
+	spec1 := CellSpec{
+		ID:         "unsafe-test-1",
+		Boundaries: createTestBounds(),
+		Capacity:   CellCapacity{MaxPlayers: 50},
+	}
+
+	spec2 := CellSpec{
+		ID:         "unsafe-test-2",
+		Boundaries: createTestBounds(),
+		Capacity:   CellCapacity{MaxPlayers: 50},
+	}
+
+	_, err := manager.CreateCell(spec1)
+	if err != nil {
+		t.Fatalf("Failed to create cell 1: %v", err)
+	}
+
+	_, err = manager.CreateCell(spec2)
+	if err != nil {
+		t.Fatalf("Failed to create cell 2: %v", err)
+	}
+
+	time.Sleep(300 * time.Millisecond)
+
+	// This should normally fail due to validation
+	annotation := MergeAnnotation{
+		SourceCellID: spec1.ID,
+		TargetCellID: spec2.ID,
+		RequestedBy:  "emergency-operator@example.com",
+		Reason:       "Emergency consolidation during system maintenance",
+		ForceUnsafe:  false,
+	}
+
+	_, err = manager.ProcessMergeAnnotation(annotation)
+	if err == nil {
+		t.Error("Expected merge to fail for unrelated cells without ForceUnsafe")
+	}
+	t.Logf("Correctly rejected unsafe merge: %v", err)
+
+	// Now test with ForceUnsafe
+	annotation.ForceUnsafe = true
+	mergedCell, err := manager.ProcessMergeAnnotation(annotation)
+	if err != nil {
+		t.Errorf("Expected ForceUnsafe merge to succeed: %v", err)
+	}
+
+	if mergedCell != nil {
+		// Verify ForceUnsafe metadata in event
+		events := manager.GetEvents()
+		for _, event := range events {
+			if event.Type == CellEventMerged {
+				if forceUnsafe, exists := event.Metadata["force_unsafe"]; exists && forceUnsafe == true {
+					t.Log("✓ ForceUnsafe merge event recorded correctly")
+					break
+				}
+			}
+		}
+	}
+}

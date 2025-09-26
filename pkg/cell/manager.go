@@ -925,6 +925,156 @@ func (m *DefaultCellManager) mergeBoundaries(bounds1, bounds2 v1.WorldBounds) v1
 	return merged
 }
 
+// ProcessMergeAnnotation processes a manual merge request annotation
+func (m *DefaultCellManager) ProcessMergeAnnotation(annotation MergeAnnotation) (*Cell, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Validate annotation
+	if annotation.SourceCellID == "" || annotation.TargetCellID == "" {
+		return nil, fmt.Errorf("annotation validation failed: both sourceCellId and targetCellId must be specified")
+	}
+
+	if annotation.SourceCellID == annotation.TargetCellID {
+		return nil, fmt.Errorf("annotation validation failed: cannot merge cell with itself")
+	}
+
+	// Check if cells exist
+	sourceCell, exists := m.cells[annotation.SourceCellID]
+	if !exists {
+		return nil, fmt.Errorf("annotation validation failed: source cell %s not found", annotation.SourceCellID)
+	}
+
+	targetCell, exists := m.cells[annotation.TargetCellID]
+	if !exists {
+		return nil, fmt.Errorf("annotation validation failed: target cell %s not found", annotation.TargetCellID)
+	}
+
+	sourceState := sourceCell.GetState()
+	targetState := targetCell.GetState()
+
+	// Enhanced validation for annotation-based merges
+	if !annotation.ForceUnsafe {
+		if err := m.validateMergePair(sourceState, targetState); err != nil {
+			return nil, fmt.Errorf("annotation merge validation failed: %w", err)
+		}
+	} else {
+		// Even with ForceUnsafe, we still check some basic safety constraints
+		if sourceState.Phase != "Running" || targetState.Phase != "Running" {
+			return nil, fmt.Errorf("unsafe merge rejected: both cells must be in Running phase even with ForceUnsafe")
+		}
+	}
+
+	mergeStart := time.Now()
+
+	// Create merged cell boundaries
+	mergedBoundaries := m.mergeBoundaries(sourceState.Boundaries, targetState.Boundaries)
+
+	// Create merged cell with annotation-based ID
+	mergedID := CellID(fmt.Sprintf("annotated-merge-%s-%s", annotation.SourceCellID, annotation.TargetCellID))
+	mergedSpec := CellSpec{
+		ID:         mergedID,
+		Boundaries: mergedBoundaries,
+		Capacity: CellCapacity{
+			MaxPlayers:  sourceState.Capacity.MaxPlayers + targetState.Capacity.MaxPlayers,
+			CPULimit:    sourceState.Capacity.CPULimit,
+			MemoryLimit: sourceState.Capacity.MemoryLimit,
+		},
+	}
+
+	mergedCell, err := NewCell(mergedSpec)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create annotated merged cell: %w", err)
+	}
+
+	// Set lineage information
+	if sourceState.ParentID != nil {
+		mergedCell.state.ParentID = sourceState.ParentID
+		mergedCell.state.Generation = sourceState.Generation
+	} else if targetState.ParentID != nil {
+		mergedCell.state.ParentID = targetState.ParentID
+		mergedCell.state.Generation = targetState.Generation
+	}
+
+	// Configure merged cell
+	mergedCell.SetSplitThreshold(m.defaultSplitThreshold)
+	mergedCell.SetOnSplitNeeded(m.handleSplitNeeded)
+
+	if err := mergedCell.Start(m.ctx); err != nil {
+		return nil, fmt.Errorf("failed to start annotated merged cell: %w", err)
+	}
+
+	// Merge all players from both cells
+	mergedPlayers := 0
+	allPlayers := make([]*PlayerState, 0)
+
+	for _, player := range sourceState.Players {
+		allPlayers = append(allPlayers, player)
+	}
+	for _, player := range targetState.Players {
+		allPlayers = append(allPlayers, player)
+	}
+
+	// Add all players to merged cell
+	for _, player := range allPlayers {
+		if err := mergedCell.AddPlayer(player); err == nil {
+			mergedPlayers++
+			// Update session tracking
+			if session, exists := m.sessions[player.ID]; exists {
+				session.CellID = mergedID
+			}
+		}
+	}
+
+	// Stop and remove the original cells
+	sourceCell.Stop()
+	targetCell.Stop()
+	delete(m.cells, annotation.SourceCellID)
+	delete(m.cells, annotation.TargetCellID)
+
+	// Add merged cell to manager
+	m.cells[mergedID] = mergedCell
+
+	mergeDuration := time.Since(mergeStart)
+
+	// Record annotation-based merge event
+	event := CellEvent{
+		Type:      CellEventMerged,
+		CellID:    mergedID,
+		ParentID:  mergedCell.state.ParentID,
+		Timestamp: time.Now(),
+		Duration:  &mergeDuration,
+		Metadata: map[string]interface{}{
+			"reason":            "ManualOverride",
+			"trigger":           "annotation",
+			"source_cells":      []CellID{annotation.SourceCellID, annotation.TargetCellID},
+			"merged_players":    mergedPlayers,
+			"total_capacity":    mergedSpec.Capacity.MaxPlayers,
+			"requested_by":      annotation.RequestedBy,
+			"annotation_reason": annotation.Reason,
+			"force_unsafe":      annotation.ForceUnsafe,
+		},
+	}
+	m.events = append(m.events, event)
+
+	// Record termination events for source cells
+	for _, sourceID := range []CellID{annotation.SourceCellID, annotation.TargetCellID} {
+		terminationEvent := CellEvent{
+			Type:      CellEventTerminated,
+			CellID:    sourceID,
+			Timestamp: time.Now(),
+			Metadata: map[string]interface{}{
+				"reason":       "annotation-merge",
+				"merged_to":    mergedID,
+				"requested_by": annotation.RequestedBy,
+			},
+		}
+		m.events = append(m.events, terminationEvent)
+	}
+
+	return mergedCell, nil
+}
+
 // GetEventsSince returns events recorded since the specified time
 func (m *DefaultCellManager) GetEventsSince(since time.Time) []CellEvent {
 	m.mu.RLock()
