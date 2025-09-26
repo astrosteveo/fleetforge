@@ -1,3 +1,0 @@
-mkdocs 1.6.1
-minify plugin spec: ModuleSpec(name='mkdocs_minify_plugin', loader=<_frozen_importlib_external.SourceFileLoader object at 0x7f3774168d70>, origin='/home/astrosteveo/Repos/fleetforge/.venv-docs/lib/python3.13/site-packages/mkdocs_minify_plugin/__init__.py', submodule_search_locations=['/home/astrosteveo/Repos/fleetforge/.venv-docs/lib/python3.13/site-packages/mkdocs_minify_plugin'])
-redirects plugin spec: ModuleSpec(name='mkdocs_redirects', loader=<_frozen_importlib_external.SourceFileLoader object at 0x7f3774168d70>, origin='/home/astrosteveo/Repos/fleetforge/.venv-docs/lib/python3.13/site-packages/mkdocs_redirects/__init__.py', submodule_search_locations=['/home/astrosteveo/Repos/fleetforge/.venv-docs/lib/python3.13/site-packages/mkdocs_redirects'])
