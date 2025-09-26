@@ -919,3 +919,355 @@ func TestCellSplitAcceptanceCriteria(t *testing.T) {
 
 	t.Log("All acceptance criteria verified successfully!")
 }
+
+// TestCellManager_MergeCells tests the manual merge override functionality
+func TestCellManager_MergeCells(t *testing.T) {
+	manager := NewCellManager()
+	defer manager.(*DefaultCellManager).Shutdown()
+
+	// First create a parent cell and split it to create siblings
+	parentSpec := CellSpec{
+		ID:         "parent-for-merge",
+		Boundaries: createTestBounds(),
+		Capacity:   CellCapacity{MaxPlayers: 100},
+	}
+
+	_, err := manager.CreateCell(parentSpec)
+	if err != nil {
+		t.Fatalf("Failed to create parent cell: %v", err)
+	}
+
+	// Wait for cell to be ready and trigger split
+	time.Sleep(500 * time.Millisecond)
+
+	// Add players to trigger split
+	for i := 0; i < 85; i++ { // Above 80% threshold
+		player := &PlayerState{
+			ID:        PlayerID(fmt.Sprintf("player-%d", i)),
+			Position:  WorldPosition{X: float64(i % 10), Y: float64(i / 10)},
+			Connected: true,
+		}
+		err := manager.AddPlayer(parentSpec.ID, player)
+		if err != nil {
+			t.Fatalf("Failed to add player %d: %v", i, err)
+		}
+	}
+
+	// Force split
+	childCells, err := manager.SplitCell(parentSpec.ID, 0.8)
+	if err != nil {
+		t.Fatalf("Failed to split cell: %v", err)
+	}
+
+	if len(childCells) != 2 {
+		t.Fatalf("Expected 2 child cells, got %d", len(childCells))
+	}
+
+	// Wait for child cells to be ready
+	time.Sleep(300 * time.Millisecond)
+
+	child1ID := childCells[0].GetState().ID
+	child2ID := childCells[1].GetState().ID
+
+	// Verify sibling relationship
+	child1State := childCells[0].GetState()
+	child2State := childCells[1].GetState()
+
+	if child1State.ParentID == nil || child2State.ParentID == nil {
+		t.Fatal("Child cells should have parent IDs")
+	}
+
+	if *child1State.ParentID != *child2State.ParentID {
+		t.Fatal("Child cells should have the same parent ID")
+	}
+
+	// Now test merge functionality
+	mergedCell, err := manager.MergeCells(child1ID, child2ID)
+	if err != nil {
+		t.Fatalf("Failed to merge cells: %v", err)
+	}
+
+	if mergedCell == nil {
+		t.Fatal("Merged cell should not be nil")
+	}
+
+	// Verify merged cell has correct properties
+	mergedState := mergedCell.GetState()
+
+	// Check that original cells are removed
+	_, err = manager.GetCell(child1ID)
+	if err == nil {
+		t.Error("Child cell 1 should be removed after merge")
+	}
+
+	_, err = manager.GetCell(child2ID)
+	if err == nil {
+		t.Error("Child cell 2 should be removed after merge")
+	}
+
+	// Check that merge event was recorded
+	events := manager.GetEvents()
+	mergeEventFound := false
+	for _, event := range events {
+		if event.Type == CellEventMerged {
+			if event.Metadata["reason"] == "ManualOverride" {
+				mergeEventFound = true
+				t.Logf("Merge event found with reason: %v", event.Metadata["reason"])
+				break
+			}
+		}
+	}
+
+	if !mergeEventFound {
+		t.Error("Merge event with ManualOverride reason not found")
+	}
+
+	t.Logf("Merge test completed successfully. Merged cell ID: %s", mergedState.ID)
+}
+
+// TestCellManager_MergeCells_ValidationFailures tests validation failures for merge operations
+func TestCellManager_MergeCells_ValidationFailures(t *testing.T) {
+	manager := NewCellManager()
+	defer manager.(*DefaultCellManager).Shutdown()
+
+	// Test case 1: Cells with different parents
+	spec1 := CellSpec{
+		ID:         "unrelated-cell-1",
+		Boundaries: createTestBounds(),
+		Capacity:   CellCapacity{MaxPlayers: 50},
+	}
+
+	spec2 := CellSpec{
+		ID:         "unrelated-cell-2",
+		Boundaries: createTestBounds(),
+		Capacity:   CellCapacity{MaxPlayers: 50},
+	}
+
+	_, err := manager.CreateCell(spec1)
+	if err != nil {
+		t.Fatalf("Failed to create cell 1: %v", err)
+	}
+
+	_, err = manager.CreateCell(spec2)
+	if err != nil {
+		t.Fatalf("Failed to create cell 2: %v", err)
+	}
+
+	// Wait for cells to be ready
+	time.Sleep(200 * time.Millisecond)
+
+	// This should fail because they're not siblings
+	_, err = manager.MergeCells(spec1.ID, spec2.ID)
+	if err == nil {
+		t.Error("Expected merge to fail for non-sibling cells")
+	}
+	t.Logf("Correctly rejected merge of non-sibling cells: %v", err)
+
+	// Test case 2: Non-existent cell
+	_, err = manager.MergeCells(spec1.ID, "non-existent-cell")
+	if err == nil {
+		t.Error("Expected merge to fail for non-existent cell")
+	}
+}
+
+// TestCellManager_MergeCells_AdjacencyValidation tests adjacency validation
+func TestCellManager_MergeCells_AdjacencyValidation(t *testing.T) {
+	manager := NewCellManager()
+	defer manager.(*DefaultCellManager).Shutdown()
+
+	// Create parent and split to get adjacent siblings
+	parentSpec := CellSpec{
+		ID: "parent-adjacency-test",
+		Boundaries: v1.WorldBounds{
+			XMin: 0.0,
+			XMax: 100.0,
+			YMin: func() *float64 { y := 0.0; return &y }(),
+			YMax: func() *float64 { y := 100.0; return &y }(),
+		},
+		Capacity: CellCapacity{MaxPlayers: 100},
+	}
+
+	_, err := manager.CreateCell(parentSpec)
+	if err != nil {
+		t.Fatalf("Failed to create parent cell: %v", err)
+	}
+
+	time.Sleep(500 * time.Millisecond)
+
+	// Force split to create adjacent siblings
+	childCells, err := manager.SplitCell(parentSpec.ID, 0.0) // Force split regardless of load
+	if err != nil {
+		t.Fatalf("Failed to split cell: %v", err)
+	}
+
+	if len(childCells) != 2 {
+		t.Fatalf("Expected 2 child cells, got %d", len(childCells))
+	}
+
+	// Wait for child cells to be ready
+	time.Sleep(300 * time.Millisecond)
+
+	child1ID := childCells[0].GetState().ID
+	child2ID := childCells[1].GetState().ID
+
+	// These should be adjacent (split along X-axis)
+	child1Bounds := childCells[0].GetState().Boundaries
+	child2Bounds := childCells[1].GetState().Boundaries
+
+	t.Logf("Child 1 bounds: X[%.1f-%.1f]", child1Bounds.XMin, child1Bounds.XMax)
+	t.Logf("Child 2 bounds: X[%.1f-%.1f]", child2Bounds.XMin, child2Bounds.XMax)
+
+	// Verify adjacency before attempting merge
+	if child1Bounds.XMax != child2Bounds.XMin && child1Bounds.XMin != child2Bounds.XMax {
+		t.Error("Child cells should be adjacent")
+	}
+
+	// This merge should succeed
+	_, err = manager.MergeCells(child1ID, child2ID)
+	if err != nil {
+		t.Errorf("Expected merge to succeed for adjacent sibling cells: %v", err)
+	}
+}
+
+// TestCellMergeAcceptanceCriteria validates all acceptance criteria for manual merge override
+func TestCellMergeAcceptanceCriteria(t *testing.T) {
+	manager := NewCellManager()
+	defer manager.(*DefaultCellManager).Shutdown()
+
+	t.Log("=== Testing Manual Merge Override Acceptance Criteria ===")
+
+	// Create parent cell for lineage testing
+	parentSpec := CellSpec{
+		ID: "merge-acceptance-parent",
+		Boundaries: v1.WorldBounds{
+			XMin: 0.0,
+			XMax: 200.0,
+			YMin: func() *float64 { y := 0.0; return &y }(),
+			YMax: func() *float64 { y := 100.0; return &y }(),
+		},
+		Capacity: CellCapacity{MaxPlayers: 120},
+	}
+
+	_, err := manager.CreateCell(parentSpec)
+	if err != nil {
+		t.Fatalf("Failed to create parent cell: %v", err)
+	}
+
+	time.Sleep(500 * time.Millisecond)
+
+	// Create sibling cells by splitting
+	childCells, err := manager.SplitCell(parentSpec.ID, 0.0)
+	if err != nil {
+		t.Fatalf("Failed to split parent cell: %v", err)
+	}
+
+	if len(childCells) != 2 {
+		t.Fatalf("Expected 2 child cells for adjacency test, got %d", len(childCells))
+	}
+
+	// Wait for child cells to be ready
+	time.Sleep(300 * time.Millisecond)
+
+	child1ID := childCells[0].GetState().ID
+	child2ID := childCells[1].GetState().ID
+	child1State := childCells[0].GetState()
+	child2State := childCells[1].GetState()
+
+	t.Logf("Created sibling cells: %s and %s", child1ID, child2ID)
+
+	// ACCEPTANCE CRITERIA 1: Merge executes if adjacency + same parent lineage
+	t.Log("--- Testing Criterion 1: Adjacency + Same Parent Lineage ---")
+
+	// Verify parent lineage
+	if child1State.ParentID == nil || child2State.ParentID == nil {
+		t.Fatal("Child cells must have parent IDs")
+	}
+
+	if *child1State.ParentID != *child2State.ParentID {
+		t.Fatal("Child cells must have same parent")
+	}
+	t.Logf("✓ Same parent lineage verified: %s", *child1State.ParentID)
+
+	// Verify adjacency (split cells should be adjacent)
+	if child1State.Boundaries.XMax != child2State.Boundaries.XMin &&
+		child1State.Boundaries.XMin != child2State.Boundaries.XMax {
+		t.Error("Child cells should be adjacent after split")
+	}
+	t.Log("✓ Adjacency verified")
+
+	// Perform merge
+	mergedCell, err := manager.MergeCells(child1ID, child2ID)
+	if err != nil {
+		t.Fatalf("Merge should succeed for adjacent siblings: %v", err)
+	}
+	t.Logf("✓ Merge executed successfully, merged cell: %s", mergedCell.GetState().ID)
+
+	// ACCEPTANCE CRITERIA 2: Event reason=ManualOverride
+	t.Log("--- Testing Criterion 2: Event Reason = ManualOverride ---")
+
+	events := manager.GetEvents()
+	mergeEventFound := false
+	var mergeEvent CellEvent
+
+	for _, event := range events {
+		if event.Type == CellEventMerged {
+			mergeEvent = event
+			if reason, exists := event.Metadata["reason"]; exists && reason == "ManualOverride" {
+				mergeEventFound = true
+				break
+			}
+		}
+	}
+
+	if !mergeEventFound {
+		t.Fatal("Merge event with reason=ManualOverride not found")
+	}
+	t.Logf("✓ ManualOverride event found: %v", mergeEvent.Metadata)
+
+	// ACCEPTANCE CRITERIA 3: Validation rejects unsafe pairs
+	t.Log("--- Testing Criterion 3: Validation Rejects Unsafe Pairs ---")
+
+	// Test 3a: Create non-sibling cells and verify rejection
+	unrelatedSpec := CellSpec{
+		ID:         "unrelated-test-cell",
+		Boundaries: createTestBounds(),
+		Capacity:   CellCapacity{MaxPlayers: 50},
+	}
+
+	_, err = manager.CreateCell(unrelatedSpec)
+	if err != nil {
+		t.Fatalf("Failed to create unrelated cell: %v", err)
+	}
+
+	time.Sleep(100 * time.Millisecond)
+
+	// Create another unrelated cell
+	unrelatedSpec2 := CellSpec{
+		ID:         "unrelated-test-cell-2",
+		Boundaries: createTestBounds(),
+		Capacity:   CellCapacity{MaxPlayers: 50},
+	}
+
+	_, err = manager.CreateCell(unrelatedSpec2)
+	if err != nil {
+		t.Fatalf("Failed to create second unrelated cell: %v", err)
+	}
+
+	time.Sleep(100 * time.Millisecond)
+
+	// This should fail - no parent relationship
+	_, err = manager.MergeCells(unrelatedSpec.ID, unrelatedSpec2.ID)
+	if err == nil {
+		t.Error("Expected merge to fail for unrelated cells")
+	}
+	t.Logf("✓ Correctly rejected unrelated cells: %v", err)
+
+	// Test 3b: Try to merge with non-existent cell
+	_, err = manager.MergeCells(unrelatedSpec.ID, "non-existent-cell")
+	if err == nil {
+		t.Error("Expected merge to fail for non-existent cell")
+	}
+	t.Logf("✓ Correctly rejected non-existent cell: %v", err)
+
+	t.Log("=== All Acceptance Criteria Verified Successfully! ===")
+}

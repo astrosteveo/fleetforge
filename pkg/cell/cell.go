@@ -49,6 +49,9 @@ func NewCell(spec CellSpec) (*Cell, error) {
 			Boundaries:  spec.Boundaries,
 			CreatedAt:   time.Now(),
 			UpdatedAt:   time.Now(),
+			ParentID:    nil,        // Root cells have no parent
+			Generation:  0,          // Root cells are generation 0
+			SiblingIDs:  []CellID{}, // Root cells have no siblings initially
 			Capacity:    spec.Capacity,
 			Players:     make(map[PlayerID]*PlayerState),
 			PlayerCount: 0,
