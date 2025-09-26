@@ -186,9 +186,14 @@ func (s *DefaultGatewayServer) handleRegisterCell(w http.ResponseWriter, r *http
 	}
 
 	// Set default values
-	if cellInfo.LastCheck.IsZero() {
+	lastCheckWasZero := cellInfo.LastCheck.IsZero()
+	if lastCheckWasZero {
 		cellInfo.LastCheck = time.Now()
-		cellInfo.Healthy = true // Default to healthy when LastCheck is unspecified
+	}
+
+	// If health wasn't explicitly set in JSON (LastCheck was zero), default to healthy
+	if lastCheckWasZero && !cellInfo.Healthy {
+		cellInfo.Healthy = true // Default to healthy when not explicitly specified
 	}
 
 	if err := s.RegisterCell(&cellInfo); err != nil {

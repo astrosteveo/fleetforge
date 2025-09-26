@@ -310,6 +310,7 @@ func (s *DefaultGatewayServer) GetMetrics() map[string]interface{} {
 	s.connMutex.RLock()
 	httpConns := 0
 	wsConns := 0
+	activeConnections := len(s.connections)
 	connectionsByCell := make(map[cell.CellID]int)
 
 	for _, conn := range s.connections {
@@ -333,7 +334,7 @@ func (s *DefaultGatewayServer) GetMetrics() map[string]interface{} {
 	cellStats := s.router.GetCellStats()
 
 	metrics := map[string]interface{}{
-		"activeConnections":    len(s.connections),
+		"activeConnections":    activeConnections,
 		"totalConnections":     atomic.LoadInt64(&s.connectionCounter),
 		"httpConnections":      httpConns,
 		"webSocketConnections": wsConns,

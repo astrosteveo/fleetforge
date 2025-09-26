@@ -9,6 +9,14 @@ import (
 	"github.com/astrosteveo/fleetforge/pkg/cell"
 )
 
+// Load balancing weights for cell selection
+const (
+	// LoadWeightReported is the weight given to the cell's reported load metric
+	LoadWeightReported = 0.7
+	// LoadWeightCapacity is the weight given to the capacity-based load calculation
+	LoadWeightCapacity = 0.3
+)
+
 // CellRouter handles cell selection and routing logic
 type CellRouter struct {
 	cells      map[cell.CellID]*CellInfo
@@ -158,7 +166,7 @@ func (r *CellRouter) SelectCellByLoad() (*CellInfo, error) {
 		if cellInfo.Capacity > 0 {
 			playerLoad := float64(cellInfo.PlayerCount) / float64(cellInfo.Capacity)
 			// Weight the reported load more heavily than just player count
-			currentLoad = (cellInfo.Load * 0.7) + (playerLoad * 0.3)
+			currentLoad = (cellInfo.Load * LoadWeightReported) + (playerLoad * LoadWeightCapacity)
 		}
 
 		if currentLoad < lowestLoad {
