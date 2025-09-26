@@ -273,6 +273,7 @@ func (ws *WorldSpecSpec) ValidateSpec() error {
 //+kubebuilder:printcolumn:name="Active Cells",type="integer",JSONPath=".status.activeCells"
 //+kubebuilder:printcolumn:name="Total Players",type="integer",JSONPath=".status.totalPlayers"
 //+kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
+//+genclient
 
 // WorldSpec is the Schema for the worldspecs API
 type WorldSpec struct {
