@@ -46,12 +46,16 @@ jobs:
     - name: Generate coverage report
       run: make test-coverage
 
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v4
       with:
         file: ./coverage.out
         flags: unittests
         name: codecov-umbrella
+        token: ${{ secrets.CODECOV_TOKEN }}
+
+    - name: Validate PRD requirements
+      run: make validate-requirements
 
   build:
     runs-on: ubuntu-latest
@@ -74,9 +78,42 @@ jobs:
         name: fleetforge-binaries
         path: bin/
 
+  integration:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Setup Kind cluster
+      uses: helm/kind-action@v1.5.0
+      with:
+        cluster_name: fleetforge-test
+        kubectl_version: v1.28.3
+
+    - name: Build and load images
+      run: |
+        make docker-build docker-build-cell docker-build-gateway
+        kind load docker-image fleetforge-controller:latest --name fleetforge-test
+        kind load docker-image fleetforge-cell:latest --name fleetforge-test
+        kind load docker-image fleetforge-gateway:latest --name fleetforge-test
+
+    - name: Deploy CRDs and controller
+      run: |
+        make install
+        make deploy
+
+    - name: Run integration tests
+      run: make test-integration
+
   docker:
     runs-on: ubuntu-latest
-    needs: test
+    needs: [test, integration]
     if: github.event_name != 'pull_request'
     steps:
     - name: Checkout code

@@ -1,0 +1,92 @@
+name: Security Scanning
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run security scans weekly
+    - cron: '0 2 * * 1'
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run Trivy vulnerability scanner (filesystem)
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-fs-results.sarif'
+
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: 'trivy-fs-results.sarif'
+        category: 'filesystem'
+
+    - name: Run Gosec Security Scanner
+      uses: securecodewarrior/github-action-gosec@master
+      with:
+        args: '-fmt sarif -out gosec-results.sarif ./...'
+
+    - name: Upload Gosec scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: 'gosec-results.sarif'
+        category: 'gosec'
+
+  docker-security:
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Build Docker images for scanning
+      run: |
+        docker build -t fleetforge-controller:security-scan -f Dockerfile.controller .
+        docker build -t fleetforge-cell:security-scan -f Dockerfile.cell .
+        docker build -t fleetforge-gateway:security-scan -f Dockerfile.gateway .
+
+    - name: Run Trivy vulnerability scanner (Docker images)
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'fleetforge-controller:security-scan'
+        format: 'sarif'
+        output: 'trivy-controller-results.sarif'
+
+    - name: Upload Docker scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: 'trivy-controller-results.sarif'
+        category: 'docker-controller'
+
+  dependency-check:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
+    - name: Run Nancy vulnerability scanner
+      run: |
+        go list -json -deps ./... | nancy sleuth
