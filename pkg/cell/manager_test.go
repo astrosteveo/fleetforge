@@ -1026,8 +1026,10 @@ func TestCellSplitCooldown(t *testing.T) {
 		t.Fatalf("Failed to get child cell: %v", err)
 	}
 
-	// Use the childCell to avoid "declared and not used" error
-	_ = childCell
+	// Assert that the childCell is not nil
+	if childCell == nil {
+		t.Fatal("Child cell is nil")
+	}
 
 	// Add more players to child to trigger threshold
 	for i := 0; i < 9; i++ {
