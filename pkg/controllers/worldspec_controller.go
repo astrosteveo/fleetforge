@@ -833,7 +833,7 @@ func (r *WorldSpecReconciler) removeAnnotation(ctx context.Context, worldSpec *f
 	delete(patch.Annotations, ForceSplitAnnotation)
 
 	// Use MergeFrom to patch only the annotation field
-	if err := r.Patch(ctx, patch, client.MergeFrom(worldSpec)); err != nil {
+	if err := r.Client.Patch(ctx, patch, client.MergeFrom(worldSpec)); err != nil {
 		return fmt.Errorf("failed to remove annotation via patch: %w", err)
 	}
 
