@@ -30,10 +30,6 @@ type Cell struct {
 	thresholdBreached bool
 	onSplitNeeded     func(cellID CellID, densityRatio float64)
 
-	// Merge threshold monitoring
-	mergeThreshold   float64
-	lowLoadStartTime time.Time
-
 	mu sync.RWMutex
 }
 
@@ -72,9 +68,7 @@ func NewCell(spec CellSpec) (*Cell, error) {
 		startTime:               time.Now(),
 		splitThreshold:          0.8, // Default 80% capacity
 		thresholdBreached:       false,
-		onSplitNeeded:           nil,         // Will be set by manager
-		mergeThreshold:          0.2,         // Default 20% capacity for merge
-		lowLoadStartTime:        time.Time{}, // Zero time initially
+		onSplitNeeded:           nil, // Will be set by manager
 	}
 
 	return cell, nil
@@ -200,7 +194,7 @@ func (c *Cell) updateMetrics() {
 		c.metrics.DensityRatio = 0.0
 	}
 
-	// Check for split threshold breach
+	// Check for threshold breach
 	if c.metrics.DensityRatio >= c.splitThreshold {
 		if !c.thresholdBreached {
 			// First time breaching threshold
@@ -215,19 +209,6 @@ func (c *Cell) updateMetrics() {
 	} else {
 		// Reset threshold breach flag if density drops below threshold
 		c.thresholdBreached = false
-	}
-
-	// Track low load periods for merge consideration
-	if c.metrics.DensityRatio <= c.mergeThreshold {
-		if c.lowLoadStartTime.IsZero() {
-			// Start tracking low load period
-			c.lowLoadStartTime = time.Now()
-			c.metrics.LowLoadStartTime = c.lowLoadStartTime
-		}
-	} else {
-		// Reset low load tracking if load increases
-		c.lowLoadStartTime = time.Time{}
-		c.metrics.LowLoadStartTime = time.Time{}
 	}
 }
 
@@ -395,7 +376,7 @@ func (c *Cell) GetMetrics() map[string]float64 {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	metrics := map[string]float64{
+	return map[string]float64{
 		"player_count":        float64(c.metrics.PlayerCount),
 		"max_players":         float64(c.metrics.MaxPlayers),
 		"cpu_usage":           c.metrics.CPUUsage,
@@ -406,25 +387,7 @@ func (c *Cell) GetMetrics() map[string]float64 {
 		"bytes_per_second":    c.metrics.BytesPerSecond,
 		"state_size_bytes":    float64(c.metrics.StateSize),
 		"uptime_seconds":      time.Since(c.startTime).Seconds(),
-		"density_ratio":       c.metrics.DensityRatio,
-		"split_count":         float64(c.metrics.SplitCount),
-		"avg_split_duration":  c.metrics.AvgSplitDuration,
-		"merge_count":         float64(c.metrics.MergeCount),
-		"avg_merge_duration":  c.metrics.AvgMergeDuration,
 	}
-
-	// Add time-based metrics
-	if !c.metrics.LastSplitTime.IsZero() {
-		metrics["last_split_seconds_ago"] = time.Since(c.metrics.LastSplitTime).Seconds()
-	}
-	if !c.metrics.LastMergeTime.IsZero() {
-		metrics["last_merge_seconds_ago"] = time.Since(c.metrics.LastMergeTime).Seconds()
-	}
-	if !c.metrics.LowLoadStartTime.IsZero() {
-		metrics["low_load_duration_seconds"] = time.Since(c.metrics.LowLoadStartTime).Seconds()
-	}
-
-	return metrics
 }
 
 // Checkpoint creates a serialized checkpoint of the cell state
@@ -473,13 +436,6 @@ func (c *Cell) isWithinBoundaries(pos WorldPosition) bool {
 	return true
 }
 
-// IsWithinBoundaries checks if a position is within the cell boundaries (public method)
-func (c *Cell) IsWithinBoundaries(pos WorldPosition) bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.isWithinBoundaries(pos)
-}
-
 // calculateDistance calculates the distance between two positions
 func (c *Cell) calculateDistance(pos1, pos2 WorldPosition) float64 {
 	dx := pos1.X - pos2.X
@@ -492,13 +448,6 @@ func (c *Cell) SetSplitThreshold(threshold float64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.splitThreshold = threshold
-}
-
-// SetMergeThreshold sets the density threshold for triggering cell merges
-func (c *Cell) SetMergeThreshold(threshold float64) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.mergeThreshold = threshold
 }
 
 // SetOnSplitNeeded sets the callback function called when a split is needed
@@ -520,14 +469,4 @@ func (c *Cell) IsThresholdBreached() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.thresholdBreached
-}
-
-// GetMetricsStruct returns the full metrics struct for advanced analysis
-func (c *Cell) GetMetricsStruct() *CellMetrics {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	// Return a copy to prevent external modification
-	metricsCopy := *c.metrics
-	return &metricsCopy
 }
