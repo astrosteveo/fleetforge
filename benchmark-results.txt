@@ -1,0 +1,6 @@
+PASS
+ok  	github.com/astrosteveo/fleetforge/pkg/cell	0.005s
+PASS
+ok  	github.com/astrosteveo/fleetforge/pkg/controllers	0.014s
+PASS
+ok  	github.com/astrosteveo/fleetforge/pkg/gateway	0.005s
