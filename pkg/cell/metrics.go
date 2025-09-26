@@ -7,17 +7,18 @@ import (
 
 // PrometheusMetrics holds Prometheus metric collectors for cells
 type PrometheusMetrics struct {
-	CellsActive      prometheus.Gauge
-	CellsTotal       prometheus.Gauge
-	CellsRunning     prometheus.Gauge
-	PlayersTotal     prometheus.Gauge
-	CapacityTotal    prometheus.Gauge
-	CellLoad         *prometheus.GaugeVec
-	UtilizationRate  prometheus.Gauge
-	PlayerCount      *prometheus.GaugeVec
-	CellUptime       *prometheus.GaugeVec
-	CellTickRate     *prometheus.GaugeVec
-	CellTickDuration *prometheus.GaugeVec
+	CellsActive         prometheus.Gauge
+	CellsTotal          prometheus.Gauge
+	CellsRunning        prometheus.Gauge
+	PlayersTotal        prometheus.Gauge
+	CapacityTotal       prometheus.Gauge
+	CellLoad            *prometheus.GaugeVec
+	UtilizationRate     prometheus.Gauge
+	PlayerCount         *prometheus.GaugeVec
+	CellUptime          *prometheus.GaugeVec
+	CellTickRate        *prometheus.GaugeVec
+	CellTickDuration    *prometheus.GaugeVec
+	SplitCooldownBlocks prometheus.Counter
 }
 
 // NewPrometheusMetrics creates and registers Prometheus metrics
@@ -82,6 +83,10 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 			},
 			[]string{"cell_id"},
 		),
+		SplitCooldownBlocks: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "fleetforge_split_cooldown_blocks",
+			Help: "Number of split attempts blocked due to cooldown",
+		}),
 	}
 }
 
@@ -128,4 +133,9 @@ func (pm *PrometheusMetrics) RemoveCellMetrics(cellID string) {
 	pm.CellUptime.DeleteLabelValues(cellID)
 	pm.CellTickRate.DeleteLabelValues(cellID)
 	pm.CellTickDuration.DeleteLabelValues(cellID)
+}
+
+// IncrementSplitCooldownBlocks increments the counter for blocked split attempts
+func (pm *PrometheusMetrics) IncrementSplitCooldownBlocks() {
+	pm.SplitCooldownBlocks.Inc()
 }
