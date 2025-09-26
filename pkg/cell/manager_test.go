@@ -944,8 +944,10 @@ func TestCellSplitCooldown(t *testing.T) {
 	// Wait for cell to be ready
 	time.Sleep(200 * time.Millisecond)
 
-	// Use the cell to avoid "declared and not used" error
-	_ = cell
+	// Assert that the cell is not nil
+	if cell == nil {
+		t.Fatal("Created cell is nil")
+	}
 
 	// Add enough players to trigger split (80% of 10 = 8 players)
 	for i := 0; i < 9; i++ {
