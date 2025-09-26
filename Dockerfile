@@ -1,7 +1,7 @@
 # FleetForge Multi-Stage Dockerfile
 
 # Stage 1: Build stage
-FROM golang:1.21-alpine AS build
+FROM golang:1.25-alpine AS build
 
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates tzdata
