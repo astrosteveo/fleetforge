@@ -17,6 +17,10 @@ limitations under the License.
 // Package v1 contains API Schema definitions for the fleetforge v1 API group
 // +kubebuilder:object:generate=true
 // +groupName=fleetforge.io
+// +k8s:deepcopy-gen=package
+// +k8s:client-gen=true
+// +k8s:informer-gen=true
+// +k8s:lister-gen=true
 package v1
 
 import (

@@ -1,8 +1,9 @@
+---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.13.0
+    controller-gen.kubebuilder.io/version: v0.15.0
   name: worldspecs.fleetforge.io
 spec:
   group: fleetforge.io
@@ -32,12 +33,19 @@ spec:
         description: WorldSpec is the Schema for the worldspecs API
         properties:
           apiVersion:
-            description: 'APIVersion defines the versioned schema of this representation
-              of an object.'
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
             type: string
           kind:
-            description: 'Kind is a string value representing the REST resource this
-              object represents.'
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
             type: string
           metadata:
             type: object
@@ -45,25 +53,33 @@ spec:
             description: WorldSpecSpec defines the desired state of WorldSpec
             properties:
               capacity:
-                description: CellCapacity defines resource and player limits for cells
+                description: Capacity defines resource and player limits
                 properties:
                   cpuLimitPerCell:
                     description: CPULimitPerCell is the CPU limit for each cell pod
+                    pattern: ^[0-9]+m?$
                     type: string
                   cpuRequestPerCell:
-                    description: CPURequestPerCell is the CPU request for each cell pod
+                    description: CPURequestPerCell is the CPU request for each cell
+                      pod
+                    pattern: ^[0-9]+m?$
                     type: string
                   maxPlayersPerCell:
                     description: MaxPlayersPerCell is the maximum number of concurrent
                       players per cell
                     format: int32
+                    maximum: 10000
+                    minimum: 1
                     type: integer
                   memoryLimitPerCell:
-                    description: MemoryLimitPerCell is the memory limit for each cell pod
+                    description: MemoryLimitPerCell is the memory limit for each cell
+                      pod
+                    pattern: ^[0-9]+[KMGT]i?$
                     type: string
                   memoryRequestPerCell:
                     description: MemoryRequestPerCell is the memory request for each
                       cell pod
+                    pattern: ^[0-9]+[KMGT]i?$
                     type: string
                 required:
                 - cpuLimitPerCell
@@ -71,17 +87,20 @@ spec:
                 - memoryLimitPerCell
                 type: object
               gameServerImage:
-                description: GameServerImage is the container image for cell game servers
+                description: GameServerImage is the container image for cell game
+                  servers
+                minLength: 1
                 type: string
               multiClusterEnabled:
                 description: MultiClusterEnabled enables cross-cluster cell placement
                 type: boolean
               persistence:
-                description: PersistenceConfiguration defines data persistence behavior
+                description: Persistence defines data persistence configuration
                 properties:
                   checkpointInterval:
                     description: CheckpointInterval defines how often cell state is
                       checkpointed
+                    pattern: ^[0-9]+[smh]$
                     type: string
                   enabled:
                     description: Enabled controls whether persistence is active
@@ -89,6 +108,7 @@ spec:
                   retentionPeriod:
                     description: RetentionPeriod defines how long to retain checkpoint
                       data
+                    pattern: ^[0-9]+[smhd]$
                     type: string
                   storageClass:
                     description: StorageClass for persistent volume claims
@@ -99,15 +119,17 @@ spec:
                 - retentionPeriod
                 type: object
               scaling:
-                description: ScalingConfiguration defines autoscaling behavior
+                description: Scaling defines autoscaling behavior
                 properties:
                   maxCells:
                     description: MaxCells is the maximum number of cells allowed
                     format: int32
+                    minimum: 1
                     type: integer
                   minCells:
                     description: MinCells is the minimum number of cells to maintain
                     format: int32
+                    minimum: 1
                     type: integer
                   predictiveEnabled:
                     description: PredictiveEnabled enables predictive scaling based
@@ -116,10 +138,14 @@ spec:
                   scaleDownThreshold:
                     description: ScaleDownThreshold is the player density threshold
                       that triggers scale-down
+                    maximum: 1
+                    minimum: 0
                     type: number
                   scaleUpThreshold:
-                    description: ScaleUpThreshold is the player density threshold that
-                      triggers scale-up
+                    description: ScaleUpThreshold is the player density threshold
+                      that triggers scale-up
+                    maximum: 1
+                    minimum: 0
                     type: number
                 required:
                 - predictiveEnabled
@@ -127,11 +153,11 @@ spec:
                 - scaleUpThreshold
                 type: object
               topology:
-                description: WorldTopology defines the spatial layout and initial cell
-                  configuration
+                description: Topology defines the spatial layout and cell configuration
                 properties:
                   cellSize:
-                    description: CellSize defines the preferred size of individual cells
+                    description: CellSize defines the preferred size of individual
+                      cells
                     properties:
                       xMax:
                         description: XMax is the maximum X coordinate
@@ -140,33 +166,37 @@ spec:
                         description: XMin is the minimum X coordinate
                         type: number
                       yMax:
-                        description: YMax is the maximum Y coordinate (optional for 2D
-                          worlds)
+                        description: YMax is the maximum Y coordinate (optional for
+                          2D worlds)
                         type: number
                       yMin:
-                        description: YMin is the minimum Y coordinate (optional for 2D
-                          worlds)
+                        description: YMin is the minimum Y coordinate (optional for
+                          2D worlds)
                         type: number
                       zMax:
-                        description: ZMax is the maximum Z coordinate (optional for 3D
-                          worlds)
+                        description: ZMax is the maximum Z coordinate (optional for
+                          3D worlds)
                         type: number
                       zMin:
-                        description: ZMin is the minimum Z coordinate (optional for 3D
-                          worlds)
+                        description: ZMin is the minimum Z coordinate (optional for
+                          3D worlds)
                         type: number
                     required:
                     - xMax
                     - xMin
                     type: object
                   initialCells:
-                    description: InitialCells is the number of cells to create at startup
+                    description: InitialCells is the number of cells to create at
+                      startup
                     format: int32
+                    maximum: 1000
+                    minimum: 1
                     type: integer
                   maxCellsPerCluster:
-                    description: MaxCellsPerCluster limits the number of cells per Kubernetes
-                      cluster
+                    description: MaxCellsPerCluster limits the number of cells per
+                      Kubernetes cluster
                     format: int32
+                    minimum: 1
                     type: integer
                   worldBoundaries:
                     description: WorldBoundaries defines the overall spatial boundaries
@@ -179,20 +209,20 @@ spec:
                         description: XMin is the minimum X coordinate
                         type: number
                       yMax:
-                        description: YMax is the maximum Y coordinate (optional for 2D
-                          worlds)
+                        description: YMax is the maximum Y coordinate (optional for
+                          2D worlds)
                         type: number
                       yMin:
-                        description: YMin is the minimum Y coordinate (optional for 2D
-                          worlds)
+                        description: YMin is the minimum Y coordinate (optional for
+                          2D worlds)
                         type: number
                       zMax:
-                        description: ZMax is the maximum Z coordinate (optional for 3D
-                          worlds)
+                        description: ZMax is the maximum Z coordinate (optional for
+                          3D worlds)
                         type: number
                       zMin:
-                        description: ZMin is the minimum Z coordinate (optional for 3D
-                          worlds)
+                        description: ZMin is the minimum Z coordinate (optional for
+                          3D worlds)
                         type: number
                     required:
                     - xMax
@@ -232,20 +262,20 @@ spec:
                           description: XMin is the minimum X coordinate
                           type: number
                         yMax:
-                          description: YMax is the maximum Y coordinate (optional for
-                            2D worlds)
+                          description: YMax is the maximum Y coordinate (optional
+                            for 2D worlds)
                           type: number
                         yMin:
-                          description: YMin is the minimum Y coordinate (optional for
-                            2D worlds)
+                          description: YMin is the minimum Y coordinate (optional
+                            for 2D worlds)
                           type: number
                         zMax:
-                          description: ZMax is the maximum Z coordinate (optional for
-                            3D worlds)
+                          description: ZMax is the maximum Z coordinate (optional
+                            for 3D worlds)
                           type: number
                         zMin:
-                          description: ZMin is the minimum Z coordinate (optional for
-                            3D worlds)
+                          description: ZMin is the minimum Z coordinate (optional
+                            for 3D worlds)
                           type: number
                       required:
                       - xMax
@@ -256,8 +286,8 @@ spec:
                         cell is running
                       type: string
                     currentPlayers:
-                      description: CurrentPlayers is the current number of players in
-                        this cell
+                      description: CurrentPlayers is the current number of players
+                        in this cell
                       format: int32
                       type: integer
                     health:
@@ -288,27 +318,43 @@ spec:
                   of the world's state
                 items:
                   description: "Condition contains details for one aspect of the current
-                    state of this API Resource."
+                    state of this API Resource.\n---\nThis struct is intended for
+                    direct use as an array at the field path .status.conditions.  For
+                    example,\n\n\n\ttype FooStatus struct{\n\t    // Represents the
+                    observations of a foo's current state.\n\t    // Known .status.conditions.type
+                    are: \"Available\", \"Progressing\", and \"Degraded\"\n\t    //
+                    +patchMergeKey=type\n\t    // +patchStrategy=merge\n\t    // +listType=map\n\t
+                    \   // +listMapKey=type\n\t    Conditions []metav1.Condition `json:\"conditions,omitempty\"
+                    patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"`\n\n\n\t
+                    \   // other fields\n\t}"
                   properties:
                     lastTransitionTime:
-                      description: lastTransitionTime is the last time the condition
-                        transitioned from one status to another.
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
                       format: date-time
                       type: string
                     message:
-                      description: message is a human readable message indicating
-                        details about the transition.
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
                       maxLength: 32768
                       type: string
                     observedGeneration:
-                      description: observedGeneration represents the .metadata.generation
-                        that the condition was set based upon.
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
                       format: int64
                       minimum: 0
                       type: integer
                     reason:
-                      description: reason contains a programmatic identifier indicating
-                        the reason for the condition's last transition.
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
                       maxLength: 1024
                       minLength: 1
                       pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
@@ -321,7 +367,12 @@ spec:
                       - Unknown
                       type: string
                     type:
-                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      description: |-
+                        type of condition in CamelCase or in foo.example.com/CamelCase.
+                        ---
+                        Many .condition.type values are consistent across resources like Available, but because arbitrary conditions can be
+                        useful (see .node.status.conditions), the ability to deconflict is important.
+                        The regex it matches is (dns1123SubdomainFmt/)?(qualifiedNameFmt)
                       maxLength: 316
                       pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
                       type: string

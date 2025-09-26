@@ -1,30 +1,42 @@
 package cell
 
 import (
+	"sync"
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
+var (
+	metricsOnce   sync.Once
+	globalMetrics *PrometheusMetrics
+)
+
 // PrometheusMetrics holds Prometheus metric collectors for cells
 type PrometheusMetrics struct {
-	CellsActive         prometheus.Gauge
-	CellsTotal          prometheus.Gauge
-	CellsRunning        prometheus.Gauge
-	PlayersTotal        prometheus.Gauge
-	CapacityTotal       prometheus.Gauge
-	CellLoad            *prometheus.GaugeVec
-	UtilizationRate     prometheus.Gauge
-	PlayerCount         *prometheus.GaugeVec
-	CellUptime          *prometheus.GaugeVec
-	CellTickRate        *prometheus.GaugeVec
-	CellTickDuration    *prometheus.GaugeVec
-	SplitCooldownBlocks prometheus.Counter
+	CellsActive               prometheus.Gauge
+	CellsTotal                prometheus.Gauge
+	CellsRunning              prometheus.Gauge
+	PlayersTotal              prometheus.Gauge
+	CapacityTotal             prometheus.Gauge
+	CellLoad                  *prometheus.GaugeVec
+	UtilizationRate           prometheus.Gauge
+	PlayerCount               *prometheus.GaugeVec
+	CellUptime                *prometheus.GaugeVec
+	CellTickRate              *prometheus.GaugeVec
+	CellTickDuration          *prometheus.GaugeVec
+	SessionReassignmentCount  prometheus.Counter
+	SessionRedistributionTime prometheus.Histogram
+	SessionLossCount          prometheus.Counter
+	SplitCooldownBlocks       prometheus.Counter
 }
 
-// NewPrometheusMetrics creates and registers Prometheus metrics
+// NewPrometheusMetrics creates and registers Prometheus metrics (singleton)
 func NewPrometheusMetrics() *PrometheusMetrics {
-	return &PrometheusMetrics{
-		CellsActive: promauto.NewGauge(prometheus.GaugeOpts{
+	metricsOnce.Do(func() {
+		globalMetrics = &PrometheusMetrics{
+			CellsActive: promauto.NewGauge(prometheus.GaugeOpts{
 			Name: "fleetforge_cells_active",
 			Help: "Number of active cells in the system",
 		}),
@@ -83,11 +95,26 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 			},
 			[]string{"cell_id"},
 		),
+		SessionReassignmentCount: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "fleetforge_session_reassignments_total",
+			Help: "Total number of session reassignments during cell splits",
+		}),
+		SessionRedistributionTime: promauto.NewHistogram(prometheus.HistogramOpts{
+			Name:    "fleetforge_session_redistribution_duration_seconds",
+			Help:    "Time taken to redistribute sessions during cell splits",
+			Buckets: prometheus.LinearBuckets(0.001, 0.1, 15), // 1ms to 1.5s with 100ms buckets
+		}),
+		SessionLossCount: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "fleetforge_session_losses_total",
+			Help: "Total number of sessions lost during redistributions",
+		}),
 		SplitCooldownBlocks: promauto.NewCounter(prometheus.CounterOpts{
 			Name: "fleetforge_split_cooldown_blocks",
 			Help: "Number of split attempts blocked due to cooldown",
 		}),
-	}
+		}
+	})
+	return globalMetrics
 }
 
 // UpdateCellMetrics updates all cell-specific metrics
@@ -138,4 +165,19 @@ func (pm *PrometheusMetrics) RemoveCellMetrics(cellID string) {
 // IncrementSplitCooldownBlocks increments the counter for blocked split attempts
 func (pm *PrometheusMetrics) IncrementSplitCooldownBlocks() {
 	pm.SplitCooldownBlocks.Inc()
+}
+
+// RecordSessionReassignment increments the session reassignment counter
+func (pm *PrometheusMetrics) RecordSessionReassignment() {
+	pm.SessionReassignmentCount.Inc()
+}
+
+// RecordSessionRedistributionTime records the time taken for session redistribution
+func (pm *PrometheusMetrics) RecordSessionRedistributionTime(duration time.Duration) {
+	pm.SessionRedistributionTime.Observe(duration.Seconds())
+}
+
+// RecordSessionLoss increments the session loss counter
+func (pm *PrometheusMetrics) RecordSessionLoss() {
+	pm.SessionLossCount.Inc()
 }
