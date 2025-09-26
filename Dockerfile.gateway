@@ -1,0 +1,49 @@
+# Multi-stage build for FleetForge Gateway
+FROM golang:1.21-alpine AS builder
+
+# Set working directory
+WORKDIR /app
+
+# Install build dependencies
+RUN apk add --no-cache git ca-certificates
+
+# Copy go mod files first for better layer caching
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build the gateway binary
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o gateway ./cmd/gateway
+
+# Production stage
+FROM alpine:3.18
+
+# Add certificates for HTTPS requests
+RUN apk --no-cache add ca-certificates
+
+# Create non-root user
+RUN addgroup -S gateway && adduser -S gateway -G gateway
+
+# Set working directory
+WORKDIR /app
+
+# Copy binary from builder stage
+COPY --from=builder /app/gateway .
+
+# Change ownership to non-root user
+RUN chown -R gateway:gateway /app
+
+# Switch to non-root user
+USER gateway
+
+# Expose gateway port
+EXPOSE 8090
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8090/health || exit 1
+
+# Run the gateway
+CMD ["./gateway"]
