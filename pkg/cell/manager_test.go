@@ -1019,7 +1019,7 @@ func TestCellSplitCooldown(t *testing.T) {
 
 	// Now try to split the child cell immediately - should be blocked by cooldown
 	t.Log("Attempting immediate re-split during cooldown period...")
-	
+
 	// Get the child cell and manually trigger split threshold
 	childCell, err := manager.GetCell(childID)
 	if err != nil {
@@ -1089,7 +1089,7 @@ func TestCellManager_ManualSplitCell(t *testing.T) {
 			XMax: 100,
 		},
 		Capacity: CellCapacity{
-			MaxPlayers: 10,
+			MaxPlayers:  10,
 			CPULimit:    "500m",
 			MemoryLimit: "1Gi",
 		},
@@ -1261,93 +1261,4 @@ func TestCellManager_ManualSplitCell(t *testing.T) {
 	}
 
 	t.Log("Cooldown functionality verified successfully!")
-}
-
-// TestCellManager_ManualSplitCell tests the manual split override functionality
-func TestCellManager_ManualSplitCell(t *testing.T) {
-	manager := NewCellManager()
-
-	// Create a test cell
-	spec := CellSpec{
-		ID: "test-cell",
-		Boundaries: v1.WorldBounds{
-			XMin: 0,
-			XMax: 100,
-		},
-		Capacity: CellCapacity{
-			MaxPlayers:  20,
-			CPULimit:    "500m",
-			MemoryLimit: "1Gi",
-		},
-	}
-
-	cell, err := manager.CreateCell(spec)
-	if err != nil {
-		t.Fatalf("Failed to create cell: %v", err)
-	}
-
-	// Wait for cell to be ready
-	time.Sleep(150 * time.Millisecond)
-
-	// Trigger manual split with custom user info
-	userInfo := map[string]interface{}{
-		"manager": "test-user",
-		"action":  "manual_split_override",
-	}
-
-	children, err := manager.ManualSplitCell("test-cell", userInfo)
-	if err != nil {
-		t.Fatalf("Failed to manually split cell: %v", err)
-	}
-
-	if len(children) == 0 {
-		t.Fatal("Expected child cells from manual split")
-	}
-
-	// Verify events were recorded correctly
-	events := manager.GetEvents()
-
-	// Look for split event with ManualOverride reason
-	var splitEvent *CellEvent
-	for _, event := range events {
-		if event.Type == CellEventSplit && event.CellID == "test-cell" {
-			splitEvent = &event
-			break
-		}
-	}
-
-	if splitEvent == nil {
-		t.Fatal("Split event not found")
-	}
-
-	// Verify event has correct reason
-	reason, ok := splitEvent.Metadata["reason"]
-	if !ok || reason != "ManualOverride" {
-		t.Errorf("Expected split reason 'ManualOverride', got %v", reason)
-	}
-
-	// Verify user info is in event metadata
-	eventUserInfo, ok := splitEvent.Metadata["user_info"]
-	if !ok {
-		t.Error("User info should be present in split event metadata")
-	} else {
-		userInfoMap, ok := eventUserInfo.(map[string]interface{})
-		if !ok {
-			t.Error("User info should be a map")
-		} else {
-			if userInfoMap["manager"] != "test-user" {
-				t.Errorf("Expected manager 'test-user', got %v", userInfoMap["manager"])
-			}
-			if userInfoMap["action"] != "manual_split_override" {
-				t.Errorf("Expected action 'manual_split_override', got %v", userInfoMap["action"])
-			}
-		}
-	}
-
-	// Verify the split threshold was 0.0 for manual split
-	if threshold, ok := splitEvent.Metadata["threshold"]; !ok || threshold != 0.0 {
-		t.Errorf("Expected threshold 0.0 for manual split, got %v", threshold)
-	}
-
-	t.Logf("Manual split test completed successfully!")
 }

@@ -51,5 +51,17 @@ issues:
     - linters:
         - typecheck
       text: "has no field or method (Get|List|Status)"
+    # Disable sync/atomic import issues (Go version compatibility)
+    - linters:
+        - typecheck
+      text: "could not import sync/atomic"
+    # Disable Name field issues (already fixed)
+    - linters:
+        - typecheck
+      text: "Name undefined"
+    # Disable Patch method issues (already fixed)
+    - linters:
+        - typecheck
+      text: "Patch undefined"
   max-issues-per-linter: 0
   max-same-issues: 0

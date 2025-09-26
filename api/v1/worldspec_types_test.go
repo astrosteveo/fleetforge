@@ -668,8 +668,8 @@ func TestDeepCopyMethods(t *testing.T) {
 
 	// Test DeepCopy
 	copied := original.DeepCopy()
-	if copied.Name != original.Name {
-		t.Errorf("DeepCopy failed: expected name %s, got %s", original.Name, copied.Name)
+	if copied.ObjectMeta.Name != original.ObjectMeta.Name {
+		t.Errorf("DeepCopy failed: expected name %s, got %s", original.ObjectMeta.Name, copied.ObjectMeta.Name)
 	}
 
 	// Modify original to ensure deep copy
@@ -682,8 +682,8 @@ func TestDeepCopyMethods(t *testing.T) {
 	obj := original.DeepCopyObject()
 	if ws, ok := obj.(*WorldSpec); !ok {
 		t.Error("DeepCopyObject failed: wrong type returned")
-	} else if ws.Name != original.Name {
-		t.Errorf("DeepCopyObject failed: expected name %s, got %s", original.Name, ws.Name)
+	} else if ws.ObjectMeta.Name != original.ObjectMeta.Name {
+		t.Errorf("DeepCopyObject failed: expected name %s, got %s", original.ObjectMeta.Name, ws.ObjectMeta.Name)
 	}
 
 	// Test individual struct DeepCopy methods
