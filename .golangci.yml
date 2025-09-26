@@ -1,22 +1,140 @@
 run:
-  timeout: 5m
+  timeout: 10m
   issues-exit-code: 1
   tests: true
+  modules-download-mode: readonly
+
+output:
+  format: colored-line-number
+  print-issued-lines: true
+  print-linter-name: true
+  uniq-by-line: true
+  sort-results: true
 
 linters-settings:
+  cyclop:
+    max-complexity: 15
+    package-average: 10.0
+    skip-tests: true
+
+  dupl:
+    threshold: 150
+
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+
+  exhaustive:
+    check-generated: false
+    default-signifies-exhaustive: false
+
+  funlen:
+    lines: 100
+    statements: 50
+
+  gci:
+    local-prefixes: github.com/astrosteveo/fleetforge
+
+  goconst:
+    min-len: 2
+    min-occurrences: 3
+
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - experimental
+      - opinionated
+      - performance
+      - style
+    disabled-checks:
+      - dupImport
+      - ifElseChain
+      - octalLiteral
+      - whyNoLint
+
+  gocyclo:
+    min-complexity: 15
+
+  godot:
+    scope: declarations
+    capital: false
+
+  goimports:
+    local-prefixes: github.com/astrosteveo/fleetforge
+
+  gomnd:
+    settings:
+      mnd:
+        checks:
+          - argument
+          - case
+          - condition
+          - return
+
   govet:
     enable-all: true
     disable:
       - fieldalignment
-  gocyclo:
-    min-complexity: 15
+      - shadow
+    settings:
+      printf:
+        funcs:
+          - (github.com/golangci/golangci-lint/pkg/logutils.Log).Infof
+          - (github.com/golangci/golangci-lint/pkg/logutils.Log).Warnf
+          - (github.com/golangci/golangci-lint/pkg/logutils.Log).Errorf
+          - (github.com/golangci/golangci-lint/pkg/logutils.Log).Fatalf
+
+  lll:
+    line-length: 120
+
   misspell:
     locale: US
+
+  nestif:
+    min-complexity: 4
+
+  nolintlint:
+    allow-leading-space: true
+    allow-unused: false
+    require-explanation: false
+    require-specific: false
+
+  prealloc:
+    simple: true
+    range-loops: true
+    for-loops: false
+
+  revive:
+    min-confidence: 0
+    rules:
+      - name: atomic
+      - name: line-length-limit
+        arguments: [120]
+      - name: argument-limit
+        arguments: [8]
+      - name: cyclomatic
+        arguments: [15]
+      - name: max-public-structs
+        arguments: [20]
+      - name: file-header
+        disabled: true
+
+  staticcheck:
+    go: "1.24"
+    checks: ["all"]
+
+  testpackage:
+    skip-regexp: (export|internal)_test\.go
+
+  unparam:
+    check-exported: false
+
   unused:
-    go: "1.21"
-  goconst:
-    min-len: 2
-    min-occurrences: 3
+    go: "1.24"
+
+  whitespace:
+    multi-if: false
+    multi-func: false
 
 linters:
   enable:
@@ -34,10 +152,51 @@ linters:
     - goconst
     - unconvert
     - unparam
+    - bodyclose
+    - cyclop
+    - dupl
+    - errorlint
+    - exhaustive
+    - exportloopref
+    - funlen
+    - gci
+    - gochecknoinits
+    - gocognit
+    - gocritic
+    - godot
+    - goerr113
+    - gofumpt
+    - gomnd
+    - goprintffuncname
+    - gosec
+    - lll
+    - makezero
+    - nakedret
+    - nestif
+    - nilerr
+    - nlreturn
+    - noctx
+    - nolintlint
+    - prealloc
+    - predeclared
+    - revive
+    - rowserrcheck
+    - sqlclosecheck
+    - stylecheck
+    - testpackage
+    - thelper
+    - tparallel
+    - wastedassign
+    - whitespace
+    - wrapcheck
   disable:
     - structcheck # deprecated in favor of unused
     - deadcode # deprecated in favor of unused
     - varcheck # deprecated in favor of unused
+    - maligned # deprecated
+    - interfacer # deprecated
+    - scopelint # deprecated
+    - golint # deprecated
 
 issues:
   exclude-rules:
@@ -47,21 +206,57 @@ issues:
         - gocyclo
         - gosec
         - dupl
+        - gomnd
+        - funlen
+        - goconst
+        - errcheck
+        - wrapcheck
+
+    # Disable certain linters for generated files
+    - path: pkg/fake/
+      linters:
+        - gocritic
+        - staticcheck
+
+    # Allow main functions to be more complex
+    - path: cmd/
+      linters:
+        - gocyclo
+        - funlen
+
     # Disable typecheck errors for embedded interface methods
     - linters:
         - typecheck
-      text: "has no field or method (Get|List|Status)"
+      text: "has no field or method (Get|List|Status|Patch|Name)"
+
     # Disable sync/atomic import issues (Go version compatibility)
     - linters:
         - typecheck
       text: "could not import sync/atomic"
-    # Disable Name field issues (already fixed)
+
+    # Disable linters for go:generate lines
     - linters:
-        - typecheck
-      text: "Name undefined"
-    # Disable Patch method issues (already fixed)
+        - lll
+      source: "^//go:generate "
+
+    # Disable some gocritic checks that are too strict
     - linters:
-        - typecheck
-      text: "Patch undefined"
+        - gocritic
+      text: "unnecessaryDefer:"
+
+    # Disable wrapcheck for certain patterns
+    - linters:
+        - wrapcheck
+      text: "error returned from external package is unwrapped"
+
+  exclude:
+    # Exclude some common false positives
+    - "G404: Use of weak random number generator"
+    - "G104: Errors unhandled"
+    - "should have a package comment"
+
   max-issues-per-linter: 0
   max-same-issues: 0
+  new: false
+  exclude-use-default: false
+  fix: false

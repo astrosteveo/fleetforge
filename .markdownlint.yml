@@ -1,0 +1,72 @@
+# Markdownlint configuration
+# See https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md
+
+default: true
+
+# Line length
+MD013:
+  line_length: 120
+  code_blocks: false
+  tables: false
+  headings: false
+
+# Multiple consecutive blank lines
+MD012:
+  maximum: 2
+
+# Trailing spaces
+MD009:
+  br_spaces: 2
+  list_item_empty_lines: false
+
+# Multiple spaces after hash on atx style header
+MD019: false
+
+# No space after hash on atx style header
+MD018: false
+
+# Multiple spaces inside emphasis markers
+MD037: false
+
+# Emphasis used instead of a header
+MD036: false
+
+# Fenced code blocks should have a language specified
+MD040: false
+
+# First line in file should be a top level header
+MD041: false
+
+# Proper names should have the correct capitalization
+MD044:
+  names:
+    - GitHub
+    - GitLab
+    - JavaScript
+    - TypeScript
+    - Kubernetes
+    - Docker
+    - FleetForge
+    - Go
+    - CI/CD
+    - API
+    - HTTP
+    - HTTPS
+    - JSON
+    - YAML
+    - HTML
+    - CSS
+    - README
+    - URL
+    - URLs
+  code_blocks: false
+
+# No space inside emphasis markers
+MD037: false
+
+# No bare URLs
+MD034: false
+
+# Horizontal rule style
+MD035:
+  style: "---"

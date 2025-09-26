@@ -98,10 +98,46 @@ vet: ## Run go vet against code.
 test: fmt vet ## Run tests.
 	go test ./... -coverprofile cover.out
 
+.PHONY: test-unit
+test-unit: fmt vet ## Run unit tests only.
+	@echo "🧪 Running unit tests..."
+	go test -short ./... -coverprofile unit-coverage.out
+	@echo "✅ Unit tests completed"
+
 .PHONY: test-coverage
 test-coverage: fmt vet ## Run tests with coverage report.
-	go test ./... -coverprofile coverage.out
+	@echo "📊 Running tests with coverage analysis..."
+	go test ./... -coverprofile coverage.out -coverpkg=./pkg/...
 	go tool cover -html=coverage.out -o coverage.html
+	@coverage=$$(go tool cover -func=coverage.out | grep total | awk '{print $$3}' | sed 's/%//'); \
+	echo "📈 Total test coverage: $$coverage%"; \
+	if command -v bc >/dev/null 2>&1; then \
+		if [ $$(echo "$$coverage >= 50" | bc -l 2>/dev/null || echo 0) -eq 1 ]; then \
+			echo "✅ Coverage meets target (≥50%)"; \
+		elif [ $$(echo "$$coverage >= 40" | bc -l 2>/dev/null || echo 0) -eq 1 ]; then \
+			echo "⚠️  Coverage below target but acceptable (≥40%)"; \
+		else \
+			echo "❌ Coverage below minimum threshold (40%)"; \
+			exit 1; \
+		fi; \
+	fi
+
+.PHONY: test-race
+test-race: fmt vet ## Run tests with race detector.
+	@echo "🏃 Running tests with race detector..."
+	go test -race ./... -timeout=5m
+	@echo "✅ Race condition tests completed"
+
+.PHONY: test-functional
+test-functional: ## Run functional tests aligned with PRD.
+	@echo "⚙️  Running functional tests..."
+	@echo "Testing core cell management functionality..."
+	go test ./pkg/cell -v -run "TestCellManager.*"
+	@echo "Testing WorldSpec controller functionality..."
+	go test ./pkg/controllers -v -run "TestWorldSpec.*"
+	@echo "Testing gateway functionality..."
+	go test ./pkg/gateway -v
+	@echo "✅ Functional tests completed"
 
 .PHONY: test-integration
 test-integration: ## Run integration tests.
@@ -132,17 +168,45 @@ test-integration: ## Run integration tests.
 .PHONY: benchmark
 benchmark: ## Run performance benchmarks.
 	@echo "🚀 Running performance benchmarks..."
-	go test -bench=. -benchmem ./pkg/...
-	@echo "📊 Benchmarks completed"
+	go test -bench=. -benchmem -run=^$$ ./pkg/... | tee benchmark-results.txt
+	@echo "📊 Benchmarks completed, results saved to benchmark-results.txt"
+
+.PHONY: benchmark-compare
+benchmark-compare: ## Compare benchmark results with baseline.
+	@echo "📈 Comparing benchmark results..."
+	@if [ -f benchmark-baseline.txt ]; then \
+		echo "Comparing with baseline..."; \
+		if command -v benchcmp >/dev/null 2>&1; then \
+			benchcmp benchmark-baseline.txt benchmark-results.txt; \
+		else \
+			echo "⚠️  benchcmp not available, install with: go install golang.org/x/tools/cmd/benchcmp@latest"; \
+		fi; \
+	else \
+		echo "No baseline found, creating baseline from current results..."; \
+		cp benchmark-results.txt benchmark-baseline.txt; \
+	fi
 
 .PHONY: test-performance
 test-performance: benchmark ## Run performance tests to validate PRD metrics.
 	@echo "📈 Validating performance against PRD requirements..."
 	@echo "⏱️  Testing controller reconciliation latency (target: p95 <2s)..."
+	@go test ./pkg/controllers -run=TestWorldSpecController_Reconcile -timeout=30s -v
 	@echo "⚡ Testing split execution time (target: p95 <10s)..."
-	@echo "🔄 Testing merge execution time (target: p95 <8s)..."
+	@go test ./pkg/cell -run=TestCellManager_SplitCell -timeout=30s -v
 	@echo "💾 Testing cell creation time (target: ≤30s)..."
+	@go test ./pkg/cell -run=TestCellManager_CreateCell -timeout=60s -v
+	@echo "🔄 Testing cooldown mechanisms..."
+	@go test ./pkg/cell -run=TestCellSplitCooldown -timeout=60s -v
 	@echo "✅ Performance validation completed"
+
+.PHONY: stress-test
+stress-test: ## Run stress tests for scalability validation.
+	@echo "💪 Running stress tests..."
+	@echo "Testing concurrent cell operations..."
+	@go test ./pkg/cell -run=TestCellManager -parallel=10 -count=5 -timeout=300s
+	@echo "Testing controller under load..."
+	@go test ./pkg/controllers -parallel=5 -count=3 -timeout=180s
+	@echo "✅ Stress tests completed"
 
 .PHONY: validate-requirements 
 validate-requirements: ## Validate PRD requirements implementation.
@@ -193,6 +257,46 @@ validate-requirements: ## Validate PRD requirements implementation.
 		fi; \
 	done
 	@echo "✅ All requirements validation passed"
+
+##@ Quality Assurance
+
+.PHONY: quality-check
+quality-check: lint test-coverage security-scan ## Run comprehensive quality checks.
+	@echo "🔍 Running comprehensive quality checks..."
+	@echo "✅ All quality checks completed"
+
+.PHONY: security-scan
+security-scan: ## Run security scans locally.
+	@echo "🔒 Running security scans..."
+	@if command -v gosec >/dev/null 2>&1; then \
+		echo "Running gosec security scanner..."; \
+		gosec -fmt json -out gosec-report.json -stdout ./...; \
+	else \
+		echo "⚠️  gosec not found. Install with: go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest"; \
+	fi
+	@if command -v govulncheck >/dev/null 2>&1; then \
+		echo "Running govulncheck..."; \
+		govulncheck ./...; \
+	else \
+		echo "⚠️  govulncheck not found. Install with: go install golang.org/x/vuln/cmd/govulncheck@latest"; \
+	fi
+	@echo "✅ Security scans completed"
+
+.PHONY: pre-commit
+pre-commit: fmt vet lint test-unit ## Run pre-commit checks.
+	@echo "✅ Pre-commit checks passed"
+
+.PHONY: pre-push
+pre-push: quality-check test-functional ## Run pre-push checks.
+	@echo "✅ Pre-push checks passed"
+
+.PHONY: ci-test
+ci-test: test-unit test-functional test-race test-coverage ## Run all CI tests.
+	@echo "🚀 All CI tests completed"
+
+.PHONY: local-ci
+local-ci: pre-commit pre-push benchmark security-scan ## Run full local CI simulation.
+	@echo "🏠 Local CI simulation completed"
 
 .PHONY: test-with-manifests
 test-with-manifests: manifests generate fmt vet ## Run tests with manifest generation.

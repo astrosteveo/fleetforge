@@ -6,18 +6,34 @@ on:
   pull_request:
     branches: [ main, develop ]
   schedule:
-    # Run security scans weekly
-    - cron: '0 2 * * 1'
+    # Run security scans daily at 6 AM UTC
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+env:
+  GO_VERSION: '1.24.0'
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+  issues: write
+  pull-requests: write
 
 jobs:
-  security-scan:
+  vulnerability-scan:
+    name: Vulnerability Scanning
     runs-on: ubuntu-latest
-    permissions:
-      security-events: write
-      contents: read
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
 
     - name: Run Trivy vulnerability scanner (filesystem)
       uses: aquasecurity/trivy-action@master
@@ -26,70 +42,367 @@ jobs:
         scan-ref: '.'
         format: 'sarif'
         output: 'trivy-fs-results.sarif'
+        severity: 'CRITICAL,HIGH,MEDIUM'
 
-    - name: Upload Trivy scan results to GitHub Security tab
+    - name: Upload Trivy filesystem scan results
       uses: github/codeql-action/upload-sarif@v3
       if: always()
       with:
         sarif_file: 'trivy-fs-results.sarif'
-        category: 'filesystem'
+        category: 'trivy-filesystem'
+
+    - name: Run Trivy configuration scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'config'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-config-results.sarif'
+
+    - name: Upload Trivy config scan results
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: 'trivy-config-results.sarif'
+        category: 'trivy-config'
+
+    - name: Build Docker images for scanning
+      run: |
+        docker build -f Dockerfile.controller -t fleetforge-controller:scan .
+        docker build -f Dockerfile.cell -t fleetforge-cell:scan .
+        docker build -f Dockerfile.gateway -t fleetforge-gateway:scan .
+
+    - name: Run Trivy container scanner (Controller)
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'fleetforge-controller:scan'
+        format: 'sarif'
+        output: 'trivy-controller-results.sarif'
+
+    - name: Upload Trivy controller scan results
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: 'trivy-controller-results.sarif'
+        category: 'trivy-controller'
+
+    - name: Run Trivy container scanner (Cell)
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'fleetforge-cell:scan'
+        format: 'sarif'
+        output: 'trivy-cell-results.sarif'
+
+    - name: Upload Trivy cell scan results
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: 'trivy-cell-results.sarif'
+        category: 'trivy-cell'
+
+    - name: Run Trivy container scanner (Gateway)
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'fleetforge-gateway:scan'
+        format: 'sarif'
+        output: 'trivy-gateway-results.sarif'
+
+    - name: Upload Trivy gateway scan results
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: 'trivy-gateway-results.sarif'
+        category: 'trivy-gateway'
+
+  code-analysis:
+    name: Static Code Analysis
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v3
+      with:
+        languages: go
+        queries: security-extended,security-and-quality
+
+    - name: Auto-build
+      uses: github/codeql-action/autobuild@v3
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v3
+      with:
+        category: "/language:go"
 
     - name: Run Gosec Security Scanner
       uses: securecodewarrior/github-action-gosec@master
       with:
-        args: '-fmt sarif -out gosec-results.sarif ./...'
+        args: '-fmt sarif -out gosec-results.sarif -stdout -verbose=text ./...'
 
-    - name: Upload Gosec scan results to GitHub Security tab
+    - name: Upload Gosec scan results
       uses: github/codeql-action/upload-sarif@v3
       if: always()
       with:
         sarif_file: 'gosec-results.sarif'
         category: 'gosec'
 
-  docker-security:
-    runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request'
-    permissions:
-      security-events: write
-      contents: read
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Build Docker images for scanning
+    - name: Run govulncheck
       run: |
-        docker build -t fleetforge-controller:security-scan -f Dockerfile.controller .
-        docker build -t fleetforge-cell:security-scan -f Dockerfile.cell .
-        docker build -t fleetforge-gateway:security-scan -f Dockerfile.gateway .
+        go install golang.org/x/vuln/cmd/govulncheck@latest
+        govulncheck ./... > govulncheck-results.txt 2>&1 || true
 
-    - name: Run Trivy vulnerability scanner (Docker images)
-      uses: aquasecurity/trivy-action@master
-      with:
-        image-ref: 'fleetforge-controller:security-scan'
-        format: 'sarif'
-        output: 'trivy-controller-results.sarif'
-
-    - name: Upload Docker scan results to GitHub Security tab
-      uses: github/codeql-action/upload-sarif@v3
+    - name: Upload govulncheck results
+      uses: actions/upload-artifact@v4
       if: always()
       with:
-        sarif_file: 'trivy-controller-results.sarif'
-        category: 'docker-controller'
+        name: govulncheck-results
+        path: govulncheck-results.txt
+        retention-days: 30
 
-  dependency-check:
+  dependency-analysis:
+    name: Dependency Analysis
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
     - name: Set up Go
-      uses: actions/setup-go@v4
+      uses: actions/setup-go@v5
       with:
-        go-version: '1.21'
+        go-version: ${{ env.GO_VERSION }}
 
-    - name: Install Nancy
-      run: go install github.com/sonatypecommunity/nancy@latest
+    - name: Run dependency review (PR only)
+      if: github.event_name == 'pull_request'
+      uses: actions/dependency-review-action@v4
+      with:
+        fail-on-severity: critical
+        allow-ghsas: 
+        deny-licenses: GPL-2.0, GPL-3.0
 
-    - name: Run Nancy vulnerability scanner
+    - name: Check for known vulnerabilities in Go modules
       run: |
-        go list -json -deps ./... | nancy sleuth
+        echo "🔍 Checking Go modules for known vulnerabilities..."
+        go list -json -deps ./... | \
+        jq -r 'select(.Module) | .Module.Path + "@" + .Module.Version' | \
+        sort -u > go-modules.txt
+        
+        echo "📋 Found $(wc -l < go-modules.txt) unique modules"
+        head -10 go-modules.txt
+
+    - name: Generate SBOM (Software Bill of Materials)
+      run: |
+        echo "📦 Generating Software Bill of Materials..."
+        go version
+        go list -json -deps ./... > sbom-go-modules.json
+
+    - name: Upload SBOM
+      uses: actions/upload-artifact@v4
+      with:
+        name: sbom-artifacts
+        path: |
+          go-modules.txt
+          sbom-go-modules.json
+        retention-days: 90
+
+  secrets-scan:
+    name: Secrets Scanning
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Run TruffleHog OSS
+      uses: trufflesecurity/trufflehog@main
+      with:
+        path: ./
+        base: main
+        head: HEAD
+        extra_args: --debug --only-verified
+
+    - name: Scan for hardcoded secrets
+      run: |
+        echo "🔍 Scanning for potential hardcoded secrets..."
+        
+        # Patterns to look for
+        patterns=(
+          "password\s*=\s*['\"][^'\"]*['\"]"
+          "secret\s*=\s*['\"][^'\"]*['\"]"
+          "api[_-]?key\s*=\s*['\"][^'\"]*['\"]"
+          "token\s*=\s*['\"][^'\"]*['\"]"
+          "access[_-]?key\s*=\s*['\"][^'\"]*['\"]"
+        )
+        
+        found_secrets=false
+        for pattern in "${patterns[@]}"; do
+          echo "Checking pattern: $pattern"
+          if grep -r -i -E "$pattern" --include="*.go" --include="*.yaml" --include="*.yml" --include="*.json" . | grep -v ".git"; then
+            echo "⚠️  Potential hardcoded secret found with pattern: $pattern"
+            found_secrets=true
+          fi
+        done
+        
+        if [ "$found_secrets" = true ]; then
+          echo "❌ Potential secrets detected. Please review and use environment variables or secret management instead."
+          exit 1
+        else
+          echo "✅ No obvious hardcoded secrets detected"
+        fi
+
+  kubernetes-security:
+    name: Kubernetes Security
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run Kubesec scan
+      run: |
+        echo "🔐 Running Kubernetes security scan..."
+        
+        # Install kubesec
+        curl -sSX GET "https://api.github.com/repos/controlplaneio/kubesec/releases/latest" \
+        | grep '"browser_download_url":' \
+        | grep linux \
+        | cut -d '"' -f 4 \
+        | xargs curl -sSL -o kubesec
+        chmod +x kubesec
+        
+        # Scan YAML files
+        find . -name "*.yaml" -o -name "*.yml" | grep -E "(config|deploy|k8s)" | while read file; do
+          echo "Scanning $file"
+          ./kubesec scan "$file" > "kubesec-$(basename "$file").json" || true
+        done
+
+    - name: Upload Kubesec results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: kubesec-results
+        path: kubesec-*.json
+        retention-days: 30
+
+    - name: Check RBAC policies
+      run: |
+        echo "👮 Checking RBAC policies for security best practices..."
+        
+        # Check for overly permissive RBAC
+        find . -name "*.yaml" -o -name "*.yml" | xargs grep -l "ClusterRole\|Role" | while read file; do
+          echo "Checking RBAC in $file"
+          
+          # Check for dangerous permissions
+          if grep -E "(\\*|create|update|delete|patch)" "$file" | grep -E "secrets|pods/exec|nodes" > /dev/null; then
+            echo "⚠️  Potentially dangerous RBAC permissions in $file"
+          fi
+          
+          # Check for cluster-admin
+          if grep "cluster-admin" "$file" > /dev/null; then
+            echo "⚠️  cluster-admin role found in $file - ensure this is necessary"
+          fi
+        done
+
+  security-report:
+    name: Security Report
+    runs-on: ubuntu-latest
+    needs: [vulnerability-scan, code-analysis, dependency-analysis, secrets-scan, kubernetes-security]
+    if: always()
+    steps:
+    - name: Generate security summary
+      run: |
+        echo "# 🔒 Security Scan Summary" > security-summary.md
+        echo "" >> security-summary.md
+        echo "**Scan Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> security-summary.md
+        echo "**Repository:** ${{ github.repository }}" >> security-summary.md
+        echo "**Branch:** ${{ github.ref_name }}" >> security-summary.md
+        echo "" >> security-summary.md
+        
+        echo "## Scan Results" >> security-summary.md
+        echo "" >> security-summary.md
+        
+        # Check job results
+        if [ "${{ needs.vulnerability-scan.result }}" = "success" ]; then
+          echo "✅ **Vulnerability Scan:** Passed" >> security-summary.md
+        else
+          echo "❌ **Vulnerability Scan:** Failed" >> security-summary.md
+        fi
+        
+        if [ "${{ needs.code-analysis.result }}" = "success" ]; then
+          echo "✅ **Code Analysis:** Passed" >> security-summary.md
+        else
+          echo "❌ **Code Analysis:** Failed" >> security-summary.md
+        fi
+        
+        if [ "${{ needs.dependency-analysis.result }}" = "success" ]; then
+          echo "✅ **Dependency Analysis:** Passed" >> security-summary.md
+        else
+          echo "❌ **Dependency Analysis:** Failed" >> security-summary.md
+        fi
+        
+        if [ "${{ needs.secrets-scan.result }}" = "success" ]; then
+          echo "✅ **Secrets Scan:** Passed" >> security-summary.md
+        else
+          echo "❌ **Secrets Scan:** Failed" >> security-summary.md
+        fi
+        
+        if [ "${{ needs.kubernetes-security.result }}" = "success" ]; then
+          echo "✅ **Kubernetes Security:** Passed" >> security-summary.md
+        else
+          echo "❌ **Kubernetes Security:** Failed" >> security-summary.md
+        fi
+        
+        echo "" >> security-summary.md
+        echo "## Next Steps" >> security-summary.md
+        echo "" >> security-summary.md
+        echo "- Review any failed scans in the GitHub Security tab" >> security-summary.md
+        echo "- Check uploaded artifacts for detailed results" >> security-summary.md
+        echo "- Address any critical or high severity findings" >> security-summary.md
+        echo "- Update dependencies regularly" >> security-summary.md
+        
+        cat security-summary.md
+
+    - name: Upload security summary
+      uses: actions/upload-artifact@v4
+      with:
+        name: security-summary
+        path: security-summary.md
+        retention-days: 90
+
+    - name: Comment on PR (if applicable)
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const summary = fs.readFileSync('security-summary.md', 'utf8');
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: `## 🔒 Security Scan Results\n\n${summary}`
+          });
+
+  notify:
+    name: Security Notification
+    runs-on: ubuntu-latest
+    needs: [vulnerability-scan, code-analysis, dependency-analysis, secrets-scan, kubernetes-security]
+    if: always()
+    steps:
+    - name: Notify security status
+      run: |
+        if [[ "${{ contains(needs.*.result, 'failure') }}" = "true" ]]; then
+          echo "🚨 Security scan failed! Please check the Security tab for details."
+          echo "Failed jobs: ${{ toJSON(needs.*.result) }}"
+          exit 1
+        else
+          echo "✅ All security scans passed successfully!"
+        fi

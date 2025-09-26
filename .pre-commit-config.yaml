@@ -1,0 +1,106 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: ['--allow-multiple-documents']
+      - id: check-json
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ['--maxkb=1024']
+      - id: check-case-conflict
+      - id: check-executables-have-shebangs
+      - id: check-shebang-scripts-are-executable
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+
+  - repo: https://github.com/dnephin/pre-commit-golang
+    rev: v0.5.1
+    hooks:
+      - id: go-fmt
+      - id: go-vet-mod
+      - id: go-imports
+      - id: go-cyclo
+        args: [-over=15]
+      - id: go-mod-tidy
+      - id: go-unit-tests
+      - id: golangci-lint
+
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        exclude: |
+          (?x)^(
+              .*\.lock$|
+              .*\.log$|
+              .*\.png$|
+              .*\.jpg$|
+              .*\.jpeg$|
+              .*\.gif$|
+              .*\.pdf$|
+              .*\.zip$|
+              .*\.tar\.gz$|
+              go\.sum$|
+              .*\.mod$
+          )$
+
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.35.1
+    hooks:
+      - id: yamllint
+        args: [-c=.yamllint.yml]
+
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.41.0
+    hooks:
+      - id: markdownlint
+        args: ['--config', '.markdownlint.yml']
+
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+        args: ['--severity=warning']
+
+  - repo: local
+    hooks:
+      - id: docker-build-test
+        name: Test Docker builds
+        entry: make docker-build docker-build-cell docker-build-gateway
+        language: system
+        files: ^Dockerfile.*$
+        pass_filenames: false
+
+      - id: security-scan
+        name: Security scan
+        entry: make security-scan
+        language: system
+        files: \.go$
+        pass_filenames: false
+
+      - id: benchmark-regression
+        name: Benchmark regression check
+        entry: make benchmark-compare
+        language: system
+        files: \.go$
+        pass_filenames: false
+
+default_language_version:
+  python: python3
+
+ci:
+  autofix_commit_msg: |
+    [pre-commit.ci] auto fixes from pre-commit.com hooks
+
+    for more information, see https://pre-commit.ci
+  autofix_prs: true
+  autoupdate_branch: ''
+  autoupdate_commit_msg: '[pre-commit.ci] pre-commit autoupdate'
+  autoupdate_schedule: weekly
+  skip: []
+  submodules: false

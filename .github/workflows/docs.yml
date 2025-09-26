@@ -29,8 +29,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
-    name: Docs Build
+  docs-quality:
+    name: Documentation Quality
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -39,12 +39,12 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Cache pip dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
@@ -56,30 +56,164 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Build documentation
-        run: mkdocs build --clean --strict
+      - name: Lint documentation
+        run: |
+          echo "🔍 Checking documentation quality..."
+          
+          # Check for broken internal links
+          echo "Checking for broken internal links..."
+          find docs -name "*.md" -exec grep -l "\[.*\](" {} \; | while read file; do
+            echo "Checking links in $file"
+            grep -o '\[.*\]([^)]*\.md[^)]*)' "$file" | sed 's/.*(\([^)]*\)).*/\1/' | while read link; do
+              if [[ "$link" =~ ^[^/]*\.md ]]; then
+                if [ ! -f "docs/$link" ]; then
+                  echo "❌ Broken link in $file: $link"
+                  exit 1
+                fi
+              fi
+            done
+          done
+          
+          # Check for orphaned pages
+          echo "Checking for orphaned pages..."
+          find docs -name "*.md" -not -name "README*.md" | while read file; do
+            basename_file=$(basename "$file")
+            if ! grep -r "$basename_file" mkdocs.yml > /dev/null; then
+              echo "⚠️  Potentially orphaned page: $file (not referenced in mkdocs.yml)"
+            fi
+          done
+          
+          # Validate YAML frontmatter
+          echo "Validating YAML frontmatter..."
+          find docs -name "*.md" -exec awk '/^---$/{if(++c==2) exit} c==1' {} \; | python -c "
+          import sys, yaml
+          try:
+              yaml.safe_load(sys.stdin.read())
+              print('✅ YAML frontmatter is valid')
+          except yaml.YAMLError as e:
+              print(f'❌ Invalid YAML frontmatter: {e}')
+              sys.exit(1)
+          " || true
+
+      - name: Check for documentation coverage
+        run: |
+          echo "📊 Documentation coverage analysis..."
+          
+          # Count documented vs undocumented API endpoints
+          api_files=$(find . -name "*.go" -path "./api/*" | wc -l)
+          doc_api_files=$(find docs -name "*.md" -path "*/api-reference/*" | wc -l)
+          echo "API files: $api_files, Documented API files: $doc_api_files"
+          
+          # Check for README files in major directories
+          for dir in cmd pkg api; do
+            if [ -d "$dir" ] && [ ! -f "$dir/README.md" ]; then
+              echo "⚠️  Missing README.md in $dir directory"
+            fi
+          done
+
+  build:
+    name: Build Documentation
+    runs-on: ubuntu-latest
+    needs: docs-quality
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install MkDocs tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Validate MkDocs configuration
+        run: |
+          echo "🔧 Validating MkDocs configuration..."
+          mkdocs build --clean --strict --verbose
+
+      - name: Generate API documentation
+        run: |
+          echo "📚 Generating API documentation..."
+          # Add any API doc generation scripts here
+          if [ -f "scripts/generate-api-docs.sh" ]; then
+            chmod +x scripts/generate-api-docs.sh
+            ./scripts/generate-api-docs.sh
+          fi
+
+      - name: Build documentation site
+        run: |
+          echo "🏗️  Building documentation site..."
+          mkdocs build --clean --strict
+          
+          # Add build timestamp
+          echo "Built on $(date -u +"%Y-%m-%d %H:%M:%S UTC")" > site/build-info.txt
+          
+          # Generate sitemap if not already done
+          if [ ! -f "site/sitemap.xml" ]; then
+            echo "📍 Generating sitemap..."
+            find site -name "*.html" | sed 's|site/||' | sed 's|index.html||' | \
+            awk '{if($0) print "https://astrosteveo.github.io/fleetforge/" $0}' > site/sitemap.txt
+          fi
+
+      - name: Validate generated HTML
+        run: |
+          echo "✅ Validating generated HTML..."
+          
+          # Check for broken internal links in generated HTML
+          find site -name "*.html" -exec grep -l 'href=' {} \; | head -5 | while read file; do
+            echo "Checking internal links in $file"
+            grep -o 'href="[^"]*"' "$file" | grep -v '^href="http' | \
+            sed 's/href="//; s/"//' | while read link; do
+              if [[ "$link" =~ \.html$ ]] && [ ! -f "site/$link" ]; then
+                echo "⚠️  Potentially broken link in $file: $link"
+              fi
+            done
+          done
+          
+          # Check for missing images
+          find site -name "*.html" -exec grep -l 'src=' {} \; | head -5 | while read file; do
+            grep -o 'src="[^"]*"' "$file" | grep -v '^src="http' | \
+            sed 's/src="//; s/"//' | while read img; do
+              if [ ! -f "site/$img" ]; then
+                echo "⚠️  Missing image in $file: $img"
+              fi
+            done
+          done
 
       - name: Upload preview artifact
         if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v4
         with:
-          name: docs-site-pr
+          name: docs-site-pr-${{ github.event.number }}
           path: site
           retention-days: 7
 
       - name: Setup Pages
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/configure-pages@v5
 
       - name: Upload artifact
-        if: github.event_name == 'push'
-        uses: actions/upload-pages-artifact@v4
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v3
         with:
           path: site
 
   deploy:
-    if: github.event_name == 'push'
-    name: Docs Deploy
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    name: Deploy to GitHub Pages
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -88,4 +222,43 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v2
+        uses: actions/deploy-pages@v4
+
+      - name: Verify deployment
+        run: |
+          echo "🚀 Documentation deployed successfully!"
+          echo "Site URL: ${{ steps.deployment.outputs.page_url }}"
+          
+          # Wait a moment for deployment to propagate
+          sleep 10
+          
+          # Verify the site is accessible
+          response=$(curl -s -o /dev/null -w "%{http_code}" "${{ steps.deployment.outputs.page_url }}")
+          if [ "$response" = "200" ]; then
+            echo "✅ Site is accessible and responding with HTTP 200"
+          else
+            echo "⚠️  Site response code: $response"
+          fi
+
+  notify:
+    name: Notify Documentation Status
+    runs-on: ubuntu-latest
+    needs: [docs-quality, build, deploy]
+    if: always()
+    steps:
+      - name: Notify success
+        if: ${{ !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
+        run: |
+          echo "✅ Documentation pipeline completed successfully!"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "📚 Documentation deployed to: https://astrosteveo.github.io/fleetforge"
+          else
+            echo "📋 Documentation built and validated for PR review"
+          fi
+
+      - name: Notify failure
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: |
+          echo "❌ Documentation pipeline failed!"
+          echo "Check the logs above for details"
+          exit 1
