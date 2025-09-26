@@ -94,7 +94,7 @@ func (r *WorldSpecReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if forceSplitValue, hasAnnotation := worldSpec.Annotations[ForceSplitAnnotation]; hasAnnotation {
 		if err := r.handleManualSplitOverride(ctx, worldSpec, forceSplitValue, log); err != nil {
 			log.Error(err, "Failed to handle manual split override")
-			r.Recorder.Event(worldSpec, corev1.EventTypeWarning, "ManualSplitFailed", 
+			r.Recorder.Event(worldSpec, corev1.EventTypeWarning, "ManualSplitFailed",
 				fmt.Sprintf("Manual split override failed: %v", err))
 		}
 	}
@@ -588,7 +588,7 @@ func (r *WorldSpecReconciler) handleManualSplitOverride(ctx context.Context, wor
 
 	// Parse the annotation value - could be a specific cell ID or "all"
 	cellIDs := r.parseCellIDsFromAnnotation(cellIDSpec, worldSpec)
-	
+
 	if len(cellIDs) == 0 {
 		return fmt.Errorf("no valid cell IDs found in annotation value: %s", cellIDSpec)
 	}
@@ -601,7 +601,7 @@ func (r *WorldSpecReconciler) handleManualSplitOverride(ctx context.Context, wor
 
 	for _, cellID := range cellIDs {
 		log.Info("Processing manual split override", "cellID", cellID, "userInfo", userInfo)
-		
+
 		// Use CellManager to perform the manual split
 		childCells, err := r.CellManager.ManualSplitCell(cell.CellID(cellID), userInfo)
 		if err != nil {
@@ -640,7 +640,7 @@ func (r *WorldSpecReconciler) handleManualSplitOverride(ctx context.Context, wor
 // parseCellIDsFromAnnotation parses the annotation value to extract cell IDs
 func (r *WorldSpecReconciler) parseCellIDsFromAnnotation(value string, worldSpec *fleetforgev1.WorldSpec) []string {
 	value = strings.TrimSpace(value)
-	
+
 	if value == "" {
 		return nil
 	}
@@ -671,7 +671,7 @@ func (r *WorldSpecReconciler) parseCellIDsFromAnnotation(value string, worldSpec
 // extractUserIdentity extracts user identity information from the object metadata
 func (r *WorldSpecReconciler) extractUserIdentity(worldSpec *fleetforgev1.WorldSpec) map[string]interface{} {
 	userInfo := make(map[string]interface{})
-	
+
 	// Extract user information from annotations and managed fields
 	if worldSpec.Annotations != nil {
 		if user, exists := worldSpec.Annotations["kubectl.kubernetes.io/last-applied-by"]; exists {
@@ -703,12 +703,12 @@ func (r *WorldSpecReconciler) removeAnnotation(ctx context.Context, worldSpec *f
 	// Create a patch to remove the annotation
 	if worldSpec.Annotations != nil {
 		delete(worldSpec.Annotations, ForceSplitAnnotation)
-		
+
 		// Update the object
 		if err := r.Update(ctx, worldSpec); err != nil {
 			return fmt.Errorf("failed to remove annotation: %w", err)
 		}
-		
+
 		log.Info("Removed manual split annotation", "annotation", ForceSplitAnnotation)
 	}
 

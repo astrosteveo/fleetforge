@@ -991,7 +991,7 @@ func TestCellManager_ManualSplitCell(t *testing.T) {
 	// Verify child cells exist and are functional
 	for i, childCell := range childCells {
 		childID := childCell.GetState().ID
-		
+
 		// Verify child cell is retrievable
 		retrievedCell, err := manager.GetCell(childID)
 		if err != nil {
@@ -1001,7 +1001,7 @@ func TestCellManager_ManualSplitCell(t *testing.T) {
 
 		// Verify child cell is healthy (allow time for startup)
 		cellState := retrievedCell.GetState()
-		
+
 		// Child cells may still be starting up, check if they're at least not in error state
 		if cellState.Phase == "Stopped" || cellState.Phase == "Error" {
 			t.Errorf("Child cell %d should not be in %s phase", i, cellState.Phase)
@@ -1012,7 +1012,7 @@ func TestCellManager_ManualSplitCell(t *testing.T) {
 
 	// Verify events were recorded correctly
 	events := manager.GetEvents()
-	
+
 	// Look for split event with ManualOverride reason
 	var splitEvent *CellEvent
 	for _, event := range events {

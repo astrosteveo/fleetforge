@@ -716,17 +716,17 @@ func TestManualSplitOverride(t *testing.T) {
 
 		reconciler := &WorldSpecReconciler{}
 		cellIDs := reconciler.parseCellIDsFromAnnotation("all", worldSpec)
-		
+
 		expectedCells := []string{
 			"test-world-cell-0",
-			"test-world-cell-1", 
+			"test-world-cell-1",
 			"test-world-cell-2",
 		}
-		
+
 		if len(cellIDs) != len(expectedCells) {
 			t.Errorf("Expected %d cells, got %d", len(expectedCells), len(cellIDs))
 		}
-		
+
 		for i, expected := range expectedCells {
 			if cellIDs[i] != expected {
 				t.Errorf("Expected cell ID '%s', got '%s'", expected, cellIDs[i])
@@ -743,12 +743,12 @@ func TestManualSplitOverride(t *testing.T) {
 
 		reconciler := &WorldSpecReconciler{}
 		cellIDs := reconciler.parseCellIDsFromAnnotation("cell-1, cell-2, cell-3", worldSpec)
-		
+
 		expected := []string{"cell-1", "cell-2", "cell-3"}
 		if len(cellIDs) != len(expected) {
 			t.Errorf("Expected %d cells, got %d", len(expected), len(cellIDs))
 		}
-		
+
 		for i, exp := range expected {
 			if cellIDs[i] != exp {
 				t.Errorf("Expected cell ID '%s', got '%s'", exp, cellIDs[i])

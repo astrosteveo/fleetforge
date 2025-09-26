@@ -211,14 +211,14 @@ func TestGH009AcceptanceCriteria(t *testing.T) {
 	t.Run("GH-009 Manual Split Override Acceptance Criteria", func(t *testing.T) {
 		// Track acceptance criteria
 		acceptanceCriteria := map[string]bool{
-			"Adding annotation triggers split within 5s":  false,
+			"Adding annotation triggers split within 5s": false,
 			"Event reason=ManualOverride":                false,
 			"Audit log entry includes user identity":     false,
 		}
 
 		// Evidence tracking
 		evidence := map[string]string{
-			"Adding annotation triggers split within 5s":  "",
+			"Adding annotation triggers split within 5s": "",
 			"Event reason=ManualOverride":                "",
 			"Audit log entry includes user identity":     "",
 		}
