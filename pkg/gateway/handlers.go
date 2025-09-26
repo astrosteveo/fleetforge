@@ -188,9 +188,7 @@ func (s *DefaultGatewayServer) handleRegisterCell(w http.ResponseWriter, r *http
 	// Set default values
 	if cellInfo.LastCheck.IsZero() {
 		cellInfo.LastCheck = time.Now()
-	}
-	if cellInfo.Healthy == false && cellInfo.LastCheck.IsZero() {
-		cellInfo.Healthy = true // Default to healthy
+		cellInfo.Healthy = true // Default to healthy when LastCheck is unspecified
 	}
 
 	if err := s.RegisterCell(&cellInfo); err != nil {
