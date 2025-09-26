@@ -823,7 +823,7 @@ func TestCellSplitAcceptanceCriteria(t *testing.T) {
 		player := &PlayerState{
 			ID: PlayerID(fmt.Sprintf("test-player-%d", i)),
 			Position: WorldPosition{
-				X: float64(i * 10),
+				X: float64(i * 200), // Spread across X=200,400,600,800,1000 to distribute between children
 				Y: 50,
 			},
 			LastSeen:  time.Now(),
@@ -938,7 +938,7 @@ func TestSessionRedistributionMetrics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create cell: %v", err)
 	}
-	
+
 	// Disable automatic split callback to avoid conflicts
 	cell.SetOnSplitNeeded(nil)
 
@@ -1042,7 +1042,7 @@ func TestSessionRedistributionPerformance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create cell: %v", err)
 	}
-	
+
 	// Disable automatic split callback to avoid conflicts
 	cell.SetOnSplitNeeded(nil)
 
@@ -1147,7 +1147,7 @@ func TestSessionCountInvariant(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create cell: %v", err)
 	}
-	
+
 	// Disable automatic split callback to avoid conflicts
 	cell.SetOnSplitNeeded(nil)
 
