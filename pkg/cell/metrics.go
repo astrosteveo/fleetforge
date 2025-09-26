@@ -29,6 +29,7 @@ type PrometheusMetrics struct {
 	SessionReassignmentCount  prometheus.Counter
 	SessionRedistributionTime prometheus.Histogram
 	SessionLossCount          prometheus.Counter
+	SplitCooldownBlocks       prometheus.Counter
 }
 
 // NewPrometheusMetrics creates and registers Prometheus metrics (singleton)
@@ -36,77 +37,81 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 	metricsOnce.Do(func() {
 		globalMetrics = &PrometheusMetrics{
 			CellsActive: promauto.NewGauge(prometheus.GaugeOpts{
-				Name: "fleetforge_cells_active",
-				Help: "Number of active cells in the system",
-			}),
-			CellsTotal: promauto.NewGauge(prometheus.GaugeOpts{
-				Name: "fleetforge_cells_total",
-				Help: "Total number of cells configured",
-			}),
-			CellsRunning: promauto.NewGauge(prometheus.GaugeOpts{
-				Name: "fleetforge_cells_running",
-				Help: "Number of running cells",
-			}),
-			PlayersTotal: promauto.NewGauge(prometheus.GaugeOpts{
-				Name: "fleetforge_players_total",
-				Help: "Total number of players across all cells",
-			}),
-			CapacityTotal: promauto.NewGauge(prometheus.GaugeOpts{
-				Name: "fleetforge_capacity_total",
-				Help: "Total player capacity across all cells",
-			}),
-			CellLoad: promauto.NewGaugeVec(
-				prometheus.GaugeOpts{
-					Name: "fleetforge_cell_load",
-					Help: "Load percentage per cell (0.0 to 1.0)",
-				},
-				[]string{"cell_id"},
-			),
-			UtilizationRate: promauto.NewGauge(prometheus.GaugeOpts{
-				Name: "fleetforge_utilization_rate",
-				Help: "Overall system utilization rate (0.0 to 1.0)",
-			}),
-			PlayerCount: promauto.NewGaugeVec(
-				prometheus.GaugeOpts{
-					Name: "fleetforge_cell_player_count",
-					Help: "Current number of players in each cell",
-				},
-				[]string{"cell_id"},
-			),
-			CellUptime: promauto.NewGaugeVec(
-				prometheus.GaugeOpts{
-					Name: "fleetforge_cell_uptime_seconds",
-					Help: "Cell uptime in seconds",
-				},
-				[]string{"cell_id"},
-			),
-			CellTickRate: promauto.NewGaugeVec(
-				prometheus.GaugeOpts{
-					Name: "fleetforge_cell_tick_rate",
-					Help: "Cell simulation tick rate",
-				},
-				[]string{"cell_id"},
-			),
-			CellTickDuration: promauto.NewGaugeVec(
-				prometheus.GaugeOpts{
-					Name: "fleetforge_cell_tick_duration_ms",
-					Help: "Cell tick duration in milliseconds",
-				},
-				[]string{"cell_id"},
-			),
-			SessionReassignmentCount: promauto.NewCounter(prometheus.CounterOpts{
-				Name: "fleetforge_session_reassignments_total",
-				Help: "Total number of session reassignments during cell splits",
-			}),
-			SessionRedistributionTime: promauto.NewHistogram(prometheus.HistogramOpts{
-				Name:    "fleetforge_session_redistribution_duration_seconds",
-				Help:    "Time taken to redistribute sessions during cell splits",
-				Buckets: prometheus.LinearBuckets(0.001, 0.1, 15), // 1ms to 1.5s with 100ms buckets
-			}),
-			SessionLossCount: promauto.NewCounter(prometheus.CounterOpts{
-				Name: "fleetforge_session_losses_total",
-				Help: "Total number of sessions lost during redistributions",
-			}),
+			Name: "fleetforge_cells_active",
+			Help: "Number of active cells in the system",
+		}),
+		CellsTotal: promauto.NewGauge(prometheus.GaugeOpts{
+			Name: "fleetforge_cells_total",
+			Help: "Total number of cells configured",
+		}),
+		CellsRunning: promauto.NewGauge(prometheus.GaugeOpts{
+			Name: "fleetforge_cells_running",
+			Help: "Number of running cells",
+		}),
+		PlayersTotal: promauto.NewGauge(prometheus.GaugeOpts{
+			Name: "fleetforge_players_total",
+			Help: "Total number of players across all cells",
+		}),
+		CapacityTotal: promauto.NewGauge(prometheus.GaugeOpts{
+			Name: "fleetforge_capacity_total",
+			Help: "Total player capacity across all cells",
+		}),
+		CellLoad: promauto.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "fleetforge_cell_load",
+				Help: "Load percentage per cell (0.0 to 1.0)",
+			},
+			[]string{"cell_id"},
+		),
+		UtilizationRate: promauto.NewGauge(prometheus.GaugeOpts{
+			Name: "fleetforge_utilization_rate",
+			Help: "Overall system utilization rate (0.0 to 1.0)",
+		}),
+		PlayerCount: promauto.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "fleetforge_cell_player_count",
+				Help: "Current number of players in each cell",
+			},
+			[]string{"cell_id"},
+		),
+		CellUptime: promauto.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "fleetforge_cell_uptime_seconds",
+				Help: "Cell uptime in seconds",
+			},
+			[]string{"cell_id"},
+		),
+		CellTickRate: promauto.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "fleetforge_cell_tick_rate",
+				Help: "Cell simulation tick rate",
+			},
+			[]string{"cell_id"},
+		),
+		CellTickDuration: promauto.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "fleetforge_cell_tick_duration_ms",
+				Help: "Cell tick duration in milliseconds",
+			},
+			[]string{"cell_id"},
+		),
+		SessionReassignmentCount: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "fleetforge_session_reassignments_total",
+			Help: "Total number of session reassignments during cell splits",
+		}),
+		SessionRedistributionTime: promauto.NewHistogram(prometheus.HistogramOpts{
+			Name:    "fleetforge_session_redistribution_duration_seconds",
+			Help:    "Time taken to redistribute sessions during cell splits",
+			Buckets: prometheus.LinearBuckets(0.001, 0.1, 15), // 1ms to 1.5s with 100ms buckets
+		}),
+		SessionLossCount: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "fleetforge_session_losses_total",
+			Help: "Total number of sessions lost during redistributions",
+		}),
+		SplitCooldownBlocks: promauto.NewCounter(prometheus.CounterOpts{
+			Name: "fleetforge_split_cooldown_blocks",
+			Help: "Number of split attempts blocked due to cooldown",
+		}),
 		}
 	})
 	return globalMetrics
@@ -155,6 +160,11 @@ func (pm *PrometheusMetrics) RemoveCellMetrics(cellID string) {
 	pm.CellUptime.DeleteLabelValues(cellID)
 	pm.CellTickRate.DeleteLabelValues(cellID)
 	pm.CellTickDuration.DeleteLabelValues(cellID)
+}
+
+// IncrementSplitCooldownBlocks increments the counter for blocked split attempts
+func (pm *PrometheusMetrics) IncrementSplitCooldownBlocks() {
+	pm.SplitCooldownBlocks.Inc()
 }
 
 // RecordSessionReassignment increments the session reassignment counter

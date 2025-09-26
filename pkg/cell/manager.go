@@ -20,6 +20,8 @@ type DefaultCellManager struct {
 
 	// Split configuration
 	defaultSplitThreshold float64
+	splitCooldownDuration time.Duration
+	lastSplitTimes        map[CellID]time.Time
 
 	// Metrics
 	metrics *PrometheusMetrics
@@ -34,11 +36,21 @@ type PlayerSessionInfo struct {
 
 // NewCellManager creates a new cell manager
 func NewCellManager() CellManager {
-	return NewCellManagerWithMetrics(nil)
+	return NewCellManagerWithCooldown(5 * time.Minute) // Default 5 minute cooldown
 }
 
-// NewCellManagerWithMetrics creates a new cell manager with optional metrics
+// NewCellManagerWithCooldown creates a new cell manager with configurable cooldown
+func NewCellManagerWithCooldown(cooldownDuration time.Duration) CellManager {
+	return NewCellManagerWithMetricsAndCooldown(nil, cooldownDuration)
+}
+
+// NewCellManagerWithMetrics creates a new cell manager with optional metrics and default cooldown
 func NewCellManagerWithMetrics(metrics *PrometheusMetrics) CellManager {
+	return NewCellManagerWithMetricsAndCooldown(metrics, 5*time.Minute)
+}
+
+// NewCellManagerWithMetricsAndCooldown creates a new cell manager with optional metrics and configurable cooldown
+func NewCellManagerWithMetricsAndCooldown(metrics *PrometheusMetrics, cooldownDuration time.Duration) CellManager {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &DefaultCellManager{
@@ -48,6 +60,8 @@ func NewCellManagerWithMetrics(metrics *PrometheusMetrics) CellManager {
 		ctx:                   ctx,
 		cancel:                cancel,
 		defaultSplitThreshold: 0.8, // 80% capacity threshold by default
+		splitCooldownDuration: cooldownDuration,
+		lastSplitTimes:        make(map[CellID]time.Time),
 		metrics:               metrics,
 	}
 }
@@ -126,6 +140,9 @@ func (m *DefaultCellManager) DeleteCell(id CellID) error {
 	}
 
 	delete(m.cells, id)
+
+	// Clean up split time tracking
+	delete(m.lastSplitTimes, id)
 
 	return nil
 }
@@ -412,6 +429,26 @@ func (m *DefaultCellManager) GetPerCellStats() map[CellID]map[string]float64 {
 
 // handleSplitNeeded is called when a cell needs to be split
 func (m *DefaultCellManager) handleSplitNeeded(cellID CellID, densityRatio float64) {
+	// Check if cell is in cooldown period
+	m.mu.RLock()
+	lastSplitTime, exists := m.lastSplitTimes[cellID]
+	cooldownDuration := m.splitCooldownDuration
+	m.mu.RUnlock()
+
+	now := time.Now()
+	if exists && now.Sub(lastSplitTime) < cooldownDuration {
+		// Cell is in cooldown period - log and increment metric
+		remainingCooldown := cooldownDuration - now.Sub(lastSplitTime)
+		fmt.Printf("Split attempt blocked for cell %s: still in cooldown period (%.1f seconds remaining, density ratio: %.2f)\n",
+			cellID, remainingCooldown.Seconds(), densityRatio)
+
+		// Increment cooldown blocks metric
+		if m.metrics != nil {
+			m.metrics.IncrementSplitCooldownBlocks()
+		}
+		return
+	}
+
 	// This will be called in a goroutine, so we need to be careful with locking
 	_, err := m.SplitCell(cellID, densityRatio)
 	if err != nil {
@@ -578,6 +615,14 @@ func (m *DefaultCellManager) splitCellInternal(cellID CellID, splitThreshold flo
 	// Mark parent cell as terminated
 	parentCell.Stop()
 	delete(m.cells, cellID)
+
+	// Record the split time for cooldown tracking
+	splitTime := time.Now()
+	for _, childID := range childIDs {
+		m.lastSplitTimes[childID] = splitTime
+	}
+	// Also record for the parent cell ID to handle any edge cases
+	m.lastSplitTimes[cellID] = splitTime
 
 	splitDuration := time.Since(splitStart)
 
