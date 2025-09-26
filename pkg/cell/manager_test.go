@@ -919,3 +919,317 @@ func TestCellSplitAcceptanceCriteria(t *testing.T) {
 
 	t.Log("All acceptance criteria verified successfully!")
 }
+
+// TestSessionRedistributionMetrics tests that session redistribution metrics are properly recorded
+func TestSessionRedistributionMetrics(t *testing.T) {
+	// Create manager with metrics enabled
+	metrics := NewPrometheusMetrics()
+	manager := NewCellManagerWithMetrics(metrics)
+	defer manager.(*DefaultCellManager).Shutdown()
+
+	// Create cell that will be split
+	spec := CellSpec{
+		ID:         "metrics-split-test-cell",
+		Boundaries: createTestBounds(),
+		Capacity:   CellCapacity{MaxPlayers: 20},
+	}
+
+	cell, err := manager.CreateCell(spec)
+	if err != nil {
+		t.Fatalf("Failed to create cell: %v", err)
+	}
+	
+	// Disable automatic split callback to avoid conflicts
+	cell.SetOnSplitNeeded(nil)
+
+	// Wait for cell to become ready
+	time.Sleep(time.Millisecond * 200)
+
+	// Add players to exceed split threshold (16 players for 80% of 20)
+	for i := 0; i < 16; i++ {
+		player := &PlayerState{
+			ID:       PlayerID(fmt.Sprintf("player-%d", i)),
+			Position: WorldPosition{X: float64(i * 5), Y: float64(i * 5)},
+			LastSeen: time.Now(),
+		}
+
+		err := manager.AddPlayer(spec.ID, player)
+		if err != nil {
+			t.Fatalf("Failed to add player %d: %v", i, err)
+		}
+	}
+
+	// Verify the cell has the expected number of players before split
+	cell, err = manager.GetCell(spec.ID)
+	if err != nil {
+		t.Fatalf("Failed to get cell: %v", err)
+	}
+
+	cellState := cell.GetState()
+	t.Logf("Cell state before split: Players=%d, Capacity=%d", cellState.PlayerCount, cellState.Capacity.MaxPlayers)
+
+	if cellState.PlayerCount != 16 {
+		t.Fatalf("Expected 16 players in cell, got %d", cellState.PlayerCount)
+	}
+
+	// Trigger split with debug
+	t.Logf("About to split cell with 16 players...")
+	childCells, err := manager.SplitCell(spec.ID, 0.8)
+	if err != nil {
+		t.Fatalf("Failed to split cell: %v", err)
+	}
+
+	t.Logf("Split successful, created %d child cells", len(childCells))
+	totalPlayersInChildren := 0
+	for i, child := range childCells {
+		childState := child.GetState()
+		totalPlayersInChildren += childState.PlayerCount
+		t.Logf("Child %d: ID=%s, Players=%d, Boundaries=%+v", i, childState.ID, childState.PlayerCount, childState.Boundaries)
+	}
+	t.Logf("Total players in children: %d", totalPlayersInChildren)
+
+	// Verify events were recorded with redistribution metrics
+	events := manager.GetEvents()
+	var splitEvent *CellEvent
+	for i := range events {
+		if events[i].Type == CellEventSplit {
+			splitEvent = &events[i]
+			break
+		}
+	}
+
+	if splitEvent == nil {
+		t.Fatal("Expected CellSplit event not found")
+	}
+
+	// Check redistribution metadata
+	metadata := splitEvent.Metadata
+	t.Logf("Split event metadata: %+v", metadata)
+
+	if redistributedPlayers, ok := metadata["redistributed_players"].(int); !ok || redistributedPlayers != 16 {
+		t.Errorf("Expected 16 redistributed players, got %v (type %T)", metadata["redistributed_players"], metadata["redistributed_players"])
+	}
+
+	if redistributionDuration, ok := metadata["redistribution_duration_ms"].(int64); !ok || redistributionDuration < 0 {
+		t.Errorf("Expected non-negative redistribution duration, got %v (type %T)", metadata["redistribution_duration_ms"], metadata["redistribution_duration_ms"])
+	}
+
+	if withinOneSecond, ok := metadata["redistribution_within_1s"].(bool); !ok || !withinOneSecond {
+		t.Errorf("Expected redistribution within 1 second, got %v", metadata["redistribution_within_1s"])
+	}
+
+	if successRate, ok := metadata["redistribution_success_rate"].(float64); !ok || successRate != 1.0 {
+		t.Errorf("Expected 100%% success rate, got %v", metadata["redistribution_success_rate"])
+	}
+
+	t.Log("Session redistribution metrics validation successful!")
+}
+
+// TestSessionRedistributionPerformance tests that 95% of sessions are redistributed within 1 second
+func TestSessionRedistributionPerformance(t *testing.T) {
+	metrics := NewPrometheusMetrics()
+	manager := NewCellManagerWithMetrics(metrics)
+	defer manager.(*DefaultCellManager).Shutdown()
+
+	// Create a large cell to test performance with many players
+	spec := CellSpec{
+		ID:         "performance-test-cell",
+		Boundaries: createTestBounds(),
+		Capacity:   CellCapacity{MaxPlayers: 100},
+	}
+
+	cell, err := manager.CreateCell(spec)
+	if err != nil {
+		t.Fatalf("Failed to create cell: %v", err)
+	}
+	
+	// Disable automatic split callback to avoid conflicts
+	cell.SetOnSplitNeeded(nil)
+
+	// Wait for cell to become ready
+	time.Sleep(time.Millisecond * 200)
+
+	// Add 80 players to trigger split at 80% capacity
+	const playerCount = 80
+	for i := 0; i < playerCount; i++ {
+		player := &PlayerState{
+			ID:       PlayerID(fmt.Sprintf("perf-player-%d", i)),
+			Position: WorldPosition{X: float64(i % 10), Y: float64(i / 10)},
+			LastSeen: time.Now(),
+		}
+
+		err := manager.AddPlayer(spec.ID, player)
+		if err != nil {
+			t.Fatalf("Failed to add player %d: %v", i, err)
+		}
+	}
+
+	// Record initial time
+	redistributionStart := time.Now()
+
+	// Trigger split
+	_, err = manager.SplitCell(spec.ID, 0.8)
+	if err != nil {
+		t.Fatalf("Failed to split cell: %v", err)
+	}
+
+	redistributionEnd := time.Now()
+	totalRedistributionTime := redistributionEnd.Sub(redistributionStart)
+
+	// Get split event to check details
+	events := manager.GetEvents()
+	var splitEvent *CellEvent
+	for i := range events {
+		if events[i].Type == CellEventSplit {
+			splitEvent = &events[i]
+			break
+		}
+	}
+
+	if splitEvent == nil {
+		t.Fatal("Expected CellSplit event not found")
+	}
+
+	// Verify performance requirements
+	metadata := splitEvent.Metadata
+
+	// Check that at least 95% of sessions were redistributed
+	redistributedPlayers := metadata["redistributed_players"].(int)
+	initialPlayerCount := metadata["parent_player_count"].(int)
+	successRate := float64(redistributedPlayers) / float64(initialPlayerCount)
+
+	if successRate < 0.95 {
+		t.Errorf("Session redistribution success rate %.2f%% is below required 95%%", successRate*100)
+	}
+
+	// Check that redistribution happened within 1 second
+	redistributionDurationMs := metadata["redistribution_duration_ms"].(int64)
+	redistributionDuration := time.Duration(redistributionDurationMs) * time.Millisecond
+
+	if redistributionDuration > time.Second {
+		t.Errorf("Session redistribution took %v, which exceeds 1 second requirement", redistributionDuration)
+	}
+
+	// Verify no session losses
+	redistributionErrors := metadata["redistribution_errors"].(int)
+	if redistributionErrors > 0 {
+		t.Errorf("Expected no session losses, but got %d errors", redistributionErrors)
+	}
+
+	// Log performance results
+	t.Logf("Performance test results:")
+	t.Logf("  - Players redistributed: %d/%d (%.1f%%)", redistributedPlayers, initialPlayerCount, successRate*100)
+	t.Logf("  - Redistribution time: %v", redistributionDuration)
+	t.Logf("  - Total split time: %v", totalRedistributionTime)
+	t.Logf("  - Errors: %d", redistributionErrors)
+
+	// Acceptance criteria validation
+	if successRate >= 0.95 && redistributionDuration <= time.Second && redistributionErrors == 0 {
+		t.Log("✅ All performance acceptance criteria met!")
+	} else {
+		t.Error("❌ Performance acceptance criteria not met")
+	}
+}
+
+// TestSessionCountInvariant tests that no sessions are lost during redistribution
+func TestSessionCountInvariant(t *testing.T) {
+	metrics := NewPrometheusMetrics()
+	manager := NewCellManagerWithMetrics(metrics)
+	defer manager.(*DefaultCellManager).Shutdown()
+
+	spec := CellSpec{
+		ID:         "invariant-test-cell",
+		Boundaries: createTestBounds(),
+		Capacity:   CellCapacity{MaxPlayers: 50},
+	}
+
+	cell, err := manager.CreateCell(spec)
+	if err != nil {
+		t.Fatalf("Failed to create cell: %v", err)
+	}
+	
+	// Disable automatic split callback to avoid conflicts
+	cell.SetOnSplitNeeded(nil)
+
+	// Wait for cell to become ready
+	time.Sleep(time.Millisecond * 200)
+
+	// Add 40 players (80% of 50)
+	const initialPlayerCount = 40
+	initialPlayerIDs := make([]PlayerID, initialPlayerCount)
+
+	for i := 0; i < initialPlayerCount; i++ {
+		playerID := PlayerID(fmt.Sprintf("invariant-player-%d", i))
+		initialPlayerIDs[i] = playerID
+
+		player := &PlayerState{
+			ID:       playerID,
+			Position: WorldPosition{X: float64(i % 10), Y: float64(i / 10)},
+			LastSeen: time.Now(),
+		}
+
+		err := manager.AddPlayer(spec.ID, player)
+		if err != nil {
+			t.Fatalf("Failed to add player %d: %v", i, err)
+		}
+	}
+
+	// Verify initial count
+	initialCount := manager.(*DefaultCellManager).GetTotalPlayerCount()
+	if initialCount != initialPlayerCount {
+		t.Fatalf("Expected %d initial players, got %d", initialPlayerCount, initialCount)
+	}
+
+	// Trigger split
+	childCells, err := manager.SplitCell(spec.ID, 0.8)
+	if err != nil {
+		t.Fatalf("Failed to split cell: %v", err)
+	}
+
+	// Verify final count matches initial count
+	finalCount := manager.(*DefaultCellManager).GetTotalPlayerCount()
+	if finalCount != initialPlayerCount {
+		t.Errorf("Session count invariant violated: initial %d, final %d", initialPlayerCount, finalCount)
+	}
+
+	// Verify all original players still exist in some cell
+	missingPlayers := 0
+	for _, playerID := range initialPlayerIDs {
+		found := false
+		for _, childCell := range childCells {
+			if childCell.GetPlayer(playerID) != nil {
+				found = true
+				break
+			}
+		}
+		if !found {
+			missingPlayers++
+			t.Errorf("Player %s not found in any child cell", playerID)
+		}
+	}
+
+	// Verify event metadata confirms no losses
+	events := manager.GetEvents()
+	var splitEvent *CellEvent
+	for i := range events {
+		if events[i].Type == CellEventSplit {
+			splitEvent = &events[i]
+			break
+		}
+	}
+
+	if splitEvent == nil {
+		t.Fatal("Expected CellSplit event not found")
+	}
+
+	redistributionErrors := splitEvent.Metadata["redistribution_errors"].(int)
+	if redistributionErrors != missingPlayers {
+		t.Errorf("Metadata error count %d doesn't match missing players %d", redistributionErrors, missingPlayers)
+	}
+
+	if missingPlayers == 0 {
+		t.Log("✅ Session count invariant maintained - no sessions lost!")
+	} else {
+		t.Errorf("❌ Session count invariant violated - %d sessions lost", missingPlayers)
+	}
+}
