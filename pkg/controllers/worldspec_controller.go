@@ -705,18 +705,20 @@ func (r *WorldSpecReconciler) extractUserIdentity(worldSpec *fleetforgev1.WorldS
 
 // removeAnnotation removes the force split annotation after processing
 func (r *WorldSpecReconciler) removeAnnotation(ctx context.Context, worldSpec *fleetforgev1.WorldSpec, log logr.Logger) error {
-	// Create a patch to remove the annotation
-	if worldSpec.Annotations != nil {
-		delete(worldSpec.Annotations, ForceSplitAnnotation)
-
-		// Update the object
-		if err := r.Update(ctx, worldSpec); err != nil {
-			return fmt.Errorf("failed to remove annotation: %w", err)
-		}
-
-		log.Info("Removed manual split annotation", "annotation", ForceSplitAnnotation)
+	if worldSpec.Annotations == nil {
+		return nil
 	}
 
+	// Create a deep copy and remove the annotation from the copy
+	patch := worldSpec.DeepCopy()
+	delete(patch.Annotations, ForceSplitAnnotation)
+
+	// Use MergeFrom to patch only the annotation field
+	if err := r.Patch(ctx, patch, client.MergeFrom(worldSpec)); err != nil {
+		return fmt.Errorf("failed to remove annotation via patch: %w", err)
+	}
+
+	log.Info("Removed manual split annotation", "annotation", ForceSplitAnnotation)
 	return nil
 }
 
